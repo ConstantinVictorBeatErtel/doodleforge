@@ -3,6 +3,7 @@ import { dirname, extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
+import { VitePWA } from "vite-plugin-pwa";
 
 const root = dirname(fileURLToPath(import.meta.url));
 
@@ -33,7 +34,32 @@ function savedWorlds(): Plugin {
 
 export default defineConfig({
   root,
-  plugins: [react(), savedWorlds()],
+  plugins: [react(), savedWorlds(), VitePWA({
+    registerType: "autoUpdate",
+    // Precache only the app shell — never the room/collider splats, GLBs or storage URLs,
+    // which are per-world and already cached server-side into Convex storage (see
+    // convex/worlds.ts). Explicit glob keeps the sample GLBs under public/models from being
+    // swept into the service worker's precache.
+    // The three.js/Spark/Convex bundle is a single ~6-7 MB chunk (no code-splitting yet) —
+    // comfortably under this cap so the app shell still gets precached instead of Workbox
+    // silently skipping it and the whole build failing.
+    workbox: { globPatterns: ["**/*.{js,css,html,svg,woff2}"], maximumFileSizeToCacheInBytes: 10 * 1024 * 1024 },
+    includeAssets: ["apple-touch-icon.png"],
+    manifest: {
+      name: "doodleforge",
+      short_name: "doodleforge",
+      description: "Walk a scanned room and sketch new objects into it.",
+      start_url: "/",
+      display: "standalone",
+      background_color: "#0b0d10",
+      theme_color: "#0b0d10",
+      icons: [
+        { src: "/pwa-192.png", sizes: "192x192", type: "image/png" },
+        { src: "/pwa-512.png", sizes: "512x512", type: "image/png" },
+        { src: "/pwa-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+      ],
+    },
+  })],
   server: {
     host: true,
     port: 5173,

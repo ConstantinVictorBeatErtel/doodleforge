@@ -136,8 +136,8 @@ body,
 .open-existing-app { position: fixed; bottom: 12px; right: 16px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--fg); padding: 10px; cursor: pointer; }
 
 .existing-worlds { position: fixed; z-index: 20; font-size: 13px; }
-.existing-worlds-top-right { top: 16px; right: 16px; }
-.existing-worlds-bottom-right { bottom: 16px; right: 16px; }
+.existing-worlds-top-right { top: calc(16px + env(safe-area-inset-top)); right: calc(16px + env(safe-area-inset-right)); }
+.existing-worlds-bottom-right { bottom: calc(16px + env(safe-area-inset-bottom)); right: calc(16px + env(safe-area-inset-right)); }
 .existing-worlds-toggle { border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--fg); padding: 9px 12px; cursor: pointer; font: inherit; box-shadow: 0 8px 30px #0004; }
 .existing-worlds-toggle:hover { background: var(--control-hover, var(--surface)); }
 .existing-worlds-panel { position: absolute; top: calc(100% + 8px); right: 0; width: 260px; max-height: 60vh; overflow-y: auto; background: var(--surface-overlay, var(--surface)); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 12px 40px #0006; backdrop-filter: blur(18px); padding: 8px; }
@@ -179,7 +179,11 @@ body,
 .local-editor { position: relative; width: 100%; height: 100dvh; overflow: hidden; }
 .room-canvas { position: absolute; inset: 0; height: 100%; }
 .room-canvas canvas { touch-action: none; }
-.viewer-toolbar { z-index: 5; position: absolute; top: 20px; left: 22px; right: 22px; display: flex; align-items: center; justify-content: space-between; pointer-events: none; gap: 18px; }
+/* env(safe-area-inset-*) resolves to 0px in a normal browser tab (Safari's own chrome already
+   reserves this space there) and to the actual notch/Dynamic Island height only when installed
+   as a standalone PWA (index.html's viewport-fit=cover opts into rendering under it) — so this
+   is safe to apply unconditionally. */
+.viewer-toolbar { z-index: 5; position: absolute; top: calc(20px + env(safe-area-inset-top)); left: calc(22px + env(safe-area-inset-left)); right: calc(22px + env(safe-area-inset-right)); display: flex; align-items: center; justify-content: space-between; pointer-events: none; gap: 18px; }
 .brand { display: flex; align-items: center; gap: 11px; text-shadow: 0 1px 12px #000; font-size: 17px; font-weight: 600; letter-spacing: -.4px; }
 .brand small { display: block; color: var(--secondary); font-size: 10px; font-weight: 400; margin-top: 3px; letter-spacing: .2px; }
 .brand-mark { font-size: 33px; color: var(--accent); }
@@ -217,7 +221,9 @@ body,
 .local-editor button.danger { color: var(--error); }
 .error, .floating-error { padding: 12px; background: var(--error-surface); color: var(--error); border-radius: 9px; margin-top: 12px; overflow-wrap: anywhere; }
 .error button { margin-left: 5px; padding: 0 6px; }
-.floating-error { position: absolute; top: 95px; left: 22px; max-width: 420px; font-size: 12px; }
+/* z-index:4 (matching .editor-panel) keeps this above .touch-controls' full-screen z-index:3
+   look-drag overlay, which otherwise swallows the tap before it reaches the Dismiss button. */
+.floating-error { position: absolute; top: 95px; left: 22px; max-width: 420px; font-size: 12px; z-index: 4; }
 .floating-error button { margin-left: 10px; }
 .local-editor details { margin-top: 22px; color: var(--muted); font-size: 11px; }
 .local-editor summary { cursor: pointer; }
@@ -235,7 +241,23 @@ body,
 .armed-hud .key-legend { margin: 0; }
 
 .paused-hint { position: absolute; top: 90px; left: 50%; transform: translateX(-50%); color: var(--fg); background: var(--bg); backdrop-filter: blur(12px); padding: 8px 14px; border-radius: 20px; font-size: 11px; text-align: center; pointer-events: none; }
-.generation-stack { position: absolute; bottom: 90px; left: 22px; width: 380px; max-width: calc(100% - 44px); display: flex; flex-direction: column-reverse; gap: 10px; max-height: calc(100vh - 160px); overflow-y: auto; }
+/* -webkit-touch-callout / user-select stop iOS's long-press "Copy/Look Up" bubble and text
+   selection from popping up on the joystick and fly buttons; touch-action alone (already set)
+   only governs scroll/zoom gestures, not that callout. tap-highlight-color kills the gray flash
+   iOS puts on tapped elements, which reads oddly on round buttons meant to be held, not tapped. */
+.touch-controls { position: absolute; inset: 0; z-index: 3; touch-action: none; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+.touch-joystick-base { position: absolute; left: calc(24px + env(safe-area-inset-left)); bottom: calc(28px + env(safe-area-inset-bottom)); width: 88px; height: 88px; border-radius: 50%; background: var(--surface-overlay); border: 1px solid var(--border); backdrop-filter: blur(12px); -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.touch-joystick-nub { position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; background: var(--accent); opacity: 0.85; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+/* Mid-right, clear of the joystick (bottom-left), the bottom hint row and "Existing worlds"
+   (bottom-right) so a thumb reaching for fly controls never fights another control. */
+.touch-fly-controls { position: absolute; right: calc(20px + env(safe-area-inset-right)); bottom: 160px; display: flex; flex-direction: column; gap: 12px; pointer-events: auto; }
+.touch-fly-button { width: 52px; height: 52px; border-radius: 50%; background: var(--surface-overlay); border: 1px solid var(--border); backdrop-filter: blur(12px); color: var(--fg); font-size: 18px; line-height: 1; display: flex; align-items: center; justify-content: center; touch-action: none; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+.touch-fly-button:active { background: var(--accent-selected, var(--control)); }
+/* Same z-index reasoning as .floating-error above: without this, .touch-controls (z-index:3,
+   full-screen, mounted whenever isTouch && walking) sits above these cards and intercepts every
+   tap meant for their Undo/Place/STL/Done buttons — confirmed on device: "can't dismiss the
+   notification". */
+.generation-stack { position: absolute; bottom: 90px; left: 22px; width: 380px; max-width: calc(100% - 44px); display: flex; flex-direction: column-reverse; gap: 10px; max-height: calc(100vh - 160px); overflow-y: auto; z-index: 4; }
 .generation-card { width: 100%; padding: 16px; display: flex; align-items: flex-start; gap: 13px; background: var(--surface-panel); border: 1px solid var(--border); backdrop-filter: blur(20px); box-shadow: 0 12px 40px #0005; border-radius: 16px; font-size: 12px; }
 .generation-card img { width: 60px; height: 60px; border-radius: 8px; object-fit: contain; background: var(--fg); }
 .generation-content { flex: 1; min-width: 0; }
@@ -263,19 +285,48 @@ body,
 .error-text { color: var(--error); }
 @keyframes breathe { 50% { opacity: .5; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
-@media (max-width: 900px) { .canvas-badge { bottom: 78px; } .walk-hint { gap: 10px; } .brand small { display: none; } }
+/* .canvas-badge sits clear above the touch joystick's top edge (bottom:28px + 88px tall =
+   116px) here — it and .touch-joystick-base used to land at nearly the same bottom-left
+   corner, which is what showed up on a real phone as an unlabeled dot behind the joystick. */
+@media (max-width: 900px) { .canvas-badge { bottom: 124px; } .walk-hint { gap: 10px; } .brand small { display: none; } }
 @media (max-width: 600px) {
-  .viewer-toolbar { top: 12px; left: 12px; right: 12px; align-items: flex-start; gap: 8px; }
+  .viewer-toolbar { top: calc(12px + env(safe-area-inset-top)); left: calc(12px + env(safe-area-inset-left)); right: calc(12px + env(safe-area-inset-right)); align-items: flex-start; gap: 8px; }
   .brand { font-size: 0; gap: 0; } .brand-mark { font-size: 28px; }
   .viewer-toolbar nav { gap: 2px; padding: 4px; font-size: 10px; }
   .viewer-toolbar nav button { padding: 8px; gap: 4px; }
-  .editor-panel { right: 12px; top: 72px; bottom: 75px; max-width: calc(100% - 24px); }
-  .walk-hint { width: calc(100% - 24px); justify-content: center; gap: 8px; padding: 8px; bottom: 12px; font-size: 9px; }
+  /* A near-full-height right-side panel hides almost the entire 3D view on a phone — while
+     placing or editing an object that's exactly the view you need to see live. Turn it into a
+     bottom sheet instead: full width, capped height, sliding up from the bottom rather than in
+     from the right, so the room stays visible above it. */
+  .editor-panel { left: calc(12px + env(safe-area-inset-left)); right: calc(12px + env(safe-area-inset-right)); top: auto; bottom: calc(12px + env(safe-area-inset-bottom)); width: auto; max-width: none; max-height: 42vh; transform: translateY(calc(100% + 30px)); }
+  .editor-panel.open { transform: translateY(0); }
+  /* Sits a row *above* the bottom edge rather than on it. Shrinking it was not enough on its
+     own: a centred pill clearing the ~155px-wide "Existing worlds" corner would have to be
+     under ~83px, narrower than the text, so measured on a 393px viewport it still overlapped
+     that button by ~34px. Both offsets carry env(safe-area-inset-bottom) so the gap holds on a
+     notched phone instead of the two converging. */
+  .walk-hint { max-width: calc(100% - 24px); justify-content: center; gap: 8px; padding: 8px; bottom: calc(56px + env(safe-area-inset-bottom)); font-size: 9px; }
   .walk-hint span:nth-child(2), .walk-hint span:nth-child(3) { display: none; }
   .drawing-heading { top: 12px; left: 12px; right: 12px; font-size: 10px; } .drawing-heading > span:last-child { display: none; }
   .drawing-composer { bottom: 12px; max-width: calc(100% - 24px); } .composer-row { flex-wrap: wrap; } .composer-row input { flex-basis: 100%; } .composer-row button { width: 100%; }
   .drawing-tools > span { font-size: 9px; } .drawing-tools button { font-size: 9px; padding: 4px; }
   .paused-hint { width: max-content; max-width: 90%; top: 75px; }
-  .armed-hud { width: calc(100% - 24px); bottom: 12px; }
+  /* The bottom of a phone screen is fully spoken for — joystick (bottom-left, up to 116px),
+     fly buttons (right), walk hint (centre), Existing worlds (bottom-right) and the editor
+     bottom sheet. The stack's desktop home at bottom:90px/left:22px landed straight on top of
+     the joystick, so move it under the toolbar instead and let it shrink to its content. The
+     paused-hint that also lives up here is hidden whenever any job exists, so they never meet. */
+  .generation-stack { top: calc(64px + env(safe-area-inset-top)); bottom: auto; left: calc(12px + env(safe-area-inset-left)); right: calc(12px + env(safe-area-inset-right)); width: auto; max-width: none; max-height: 38vh; }
+  /* Condensed while a sketch is generating: the stage pills carry the progress, so the card is
+     heading + elapsed + pills (the blurb is dropped in the JSX on touch) at a smaller scale. */
+  .generation-card { padding: 10px 12px; gap: 10px; border-radius: 12px; }
+  .generation-card img { width: 36px; height: 36px; }
+  .generation-content p { margin: 4px 0 8px; }
+  .pipeline-steps { margin: 8px 0 0; gap: 3px; }
+  .pipeline-steps span { padding-top: 5px; font-size: 8px; }
+  /* Clears the editor-panel bottom sheet's 42vh height (see .editor-panel above) — arm()
+     auto-opens that panel, so without this the armed-hud legend and the panel would land in
+     the same bottom:12px spot and stack directly on top of each other. */
+  .armed-hud { width: calc(100% - 24px); bottom: calc(42vh + 20px + env(safe-area-inset-bottom)); }
   .armed-hud .key-legend { grid-template-columns: 1fr 1fr; }
 }

@@ -38,7 +38,7 @@ export function DrawingBridge({ captureRef }: { captureRef: React.MutableRefObje
 }
 
 const INK = "#ff5488";
-export function DrawingLayer({ capture, onCancel, onGenerate, blocked, errorMessage }: { capture: DrawingCapture; onCancel: () => void; onGenerate: (request: DrawingRequest) => Promise<void>; blocked: boolean; errorMessage: string }) {
+export function DrawingLayer({ capture, onCancel, onGenerate, blocked, errorMessage, isTouch = false }: { capture: DrawingCapture; onCancel: () => void; onGenerate: (request: DrawingRequest) => Promise<void>; blocked: boolean; errorMessage: string; isTouch?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const strokes = useRef<Stroke[]>([]);
   const current = useRef<{ stroke: Stroke; pointerId: number } | null>(null);
@@ -129,7 +129,9 @@ export function DrawingLayer({ capture, onCancel, onGenerate, blocked, errorMess
       <div className="drawing-tools"><span>{anchor ? "Anchored to a real surface · it'll be placed where you drew it" : "Draw the object's outline"}</span>
         <button type="button" disabled={!strokes.current.length} onClick={() => { strokes.current.pop(); refreshAnchor(); }}>Undo stroke</button>
         <button type="button" disabled={!strokes.current.length} onClick={() => { strokes.current = []; refreshAnchor(); }}>Clear</button>
-        <button type="button" onClick={onCancel}>Cancel <kbd>Esc</kbd></button>
+        {/* The Escape key handler above stays wired up either way — a phone can have a
+            bluetooth keyboard; only the hint goes, since most touch users have no Esc key. */}
+        <button type="button" onClick={onCancel}>Cancel {!isTouch && <kbd>Esc</kbd>}</button>
       </div>
       <div className="composer-row"><input aria-label="Describe your object" placeholder="What are you imagining? A faceted ceramic pot…" value={description} maxLength={2000} onChange={(e) => setDescription(e.target.value)} required />
         <button className="primary" disabled={blocked || !anchor || !description.trim()} type="submit">{blocked ? "Sending drawing…" : "Create in room"} <span>↗</span></button></div>

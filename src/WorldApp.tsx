@@ -17,7 +17,8 @@ import type { Doc, Id } from "../convex/_generated/dataModel";
 import { Asset, disposeModel, gltfLoader } from "./components/Asset";
 import { PlacementGhost, type GhostState } from "./components/PlacementGhost";
 import { Collider, SparkSetup, SplatWorld } from "./components/SplatWorld";
-import { Walk, type MouseLook } from "./components/LocalWalk";
+import { Walk, type MouseLook, type TouchInput } from "./components/LocalWalk";
+import { TouchControls } from "./components/TouchControls";
 import { Players } from "./components/Players";
 import { DebugPanel, DEBUG_DEFAULTS, type DebugSettings } from "./components/DebugPanel";
 import { DrawingBridge, DrawingLayer, type DrawingCapture, type DrawingRequest } from "./components/DrawingLayer";
@@ -120,6 +121,11 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
   const [paused, setPaused] = useState(false);
   const [mouseLocked, setMouseLocked] = useState(false);
   const mouseLookRef = useRef<MouseLook | null>(null);
+  // Pointer Lock never works on iOS (WebKit doesn't implement it on touch-first devices, in
+  // Safari or any WKWebView wrapper), so touch devices get a joystick + drag-to-look overlay
+  // instead. Computed once — this doesn't change over the life of a tab.
+  const [isTouch] = useState(() => typeof window !== "undefined" && (window.matchMedia?.("(pointer: coarse)")?.matches ?? false));
+  const touchInputRef = useRef<TouchInput>({ moveX: 0, moveZ: 0, lookDX: 0, lookDY: 0, flyY: 0, pinchDelta: 0 });
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [drawing, setDrawing] = useState<DrawingCapture | null>(null);
   const captureRef = useRef<(() => DrawingCapture) | null>(null);
@@ -358,7 +364,7 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
       <nav aria-label="Room controls">
         <button disabled={!!drawing || !paused} onClick={() => { cancel(); resumeWalking(); }}>Resume look</button>
         <button className="primary" disabled={!!drawing || !canDraw}
-          title={roomReady ? "Sketch an object into the room" : roomStatus} onClick={toggleDrawMode}>Draw an object <kbd>H</kbd></button>
+          title={roomReady ? "Sketch an object into the room" : roomStatus} onClick={toggleDrawMode}>Draw an object {!isTouch && <kbd>H</kbd>}</button>
         <button aria-expanded={libraryOpen} aria-controls="object-library" onClick={() => setLibraryOpen((v) => !v)}>Objects <span className="count">{placements.length}</span></button>
       </nav>
     </header>
@@ -377,7 +383,9 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
         {joined ? <span className="save-status">joined</span>
           : <button onClick={async () => { await join({ room, sessionId, name: "me", color: randomColor() }); setJoined(true); }}>Join multiplayer</button>}
       </div>
-      <p className="controls-help">Click room to capture mouse · <kbd>H</kbd> to draw · <kbd>Esc</kbd> for this panel<br />W/A/S/D walk · Q/E down/up · Shift for speed</p>
+      <p className="controls-help">{isTouch
+        ? <>Drag the room to look · Draw an object to sketch<br />Joystick to walk · push further to run</>
+        : <>Click room to capture mouse · <kbd>H</kbd> to draw · <kbd>Esc</kbd> for this panel<br />W/A/S/D walk · Q/E down/up · Shift for speed</>}</p>
 
       {error && <div role="alert" className="error">{error}<button aria-label="Dismiss error" onClick={() => setError("")}>×</button></div>}
 
@@ -396,7 +404,7 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
       {armed && <section className="placing-panel">
         <div className="section-heading"><h2>{armed.movingId ? "Move object" : "Place object"}</h2><button onClick={cancel}>Cancel</button></div>
         <p role="status">{!previewReady ? "Loading preview…" : ghost ? `On a ${ghost.kind} · ${ghost.source === "collider" ? "room mesh" : "splat"} · size ×${ghost.scale.toFixed(2)}` : "Move the cursor over a room surface"}</p>
-        <TransformKeys />
+        <TransformKeys isTouch={isTouch} />
         <label className="field">Size <NumberInput label="Preview size" value={armed.targetSize} min={0.02} max={10} step={0.05} onChange={(value) => setArmed({ ...armed, targetSize: value })} /></label>
         <label className="field">Turn <NumberInput label="Preview rotation" value={yaw} min={-360} max={360} step={15} onChange={setYaw} />°</label>
         <p className="hint">The object follows whatever is under the cursor: standing on floors and table tops, flat against walls, hanging from ceilings.</p>
@@ -462,7 +470,7 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
         room={room} solveRef={solveRef} arm={arm} place={place} history={history}
           store={store} orient={orient} debug={debug} vision={vision} onPlaced={onJobPlaced} onError={setError} />)}
       <Canvas frameloop={drawing ? "never" : "always"} dpr={1} gl={{ antialias: false }} camera={{ position: [0, 1.6, 0], fov: 65, near: 0.02, far: 500 }}>
-        <SparkSetup />
+        <SparkSetup onError={setError} />
         <DrawingBridge captureRef={captureRef} />
         <SketchSolver solveRef={solveRef} />
         <ambientLight intensity={1.4} />
@@ -514,18 +522,23 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
             })();
             cancel();
           }} />}
-        <Walk reset={reset} paused={paused || !!armed} enabled={!drawing} mouseLookRef={mouseLookRef}
+        <Walk reset={reset} paused={paused || !!armed} enabled={!drawing} mouseLookRef={mouseLookRef} touchInputRef={touchInputRef}
           onLockChange={(locked) => { setMouseLocked(locked); setPaused(!locked); }} onError={setError} />
         {joined && <Players room={room} sessionId={sessionId} />}
       </Canvas>
 
       {!drawing && <>
+        {isTouch && !paused && !armed && <TouchControls inputRef={touchInputRef} />}
         <div className="canvas-badge"><span className="live-dot" />{roomReady ? "LIVE ROOM" : roomStatus}</div>
         {mouseLocked && <div className="crosshair" />}
-        {!paused && !mouseLocked && <div className="paused-hint">Click the room to explore · H to draw</div>}
-        {!armed && <div className="walk-hint"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Walk</span><span><kbd>Q</kbd><kbd>E</kbd> Fly</span><span><kbd>Shift</kbd> Faster</span><span><kbd>H</kbd> Draw</span>{mouseLocked && <span>Click an object to edit</span>}</div>}
-        {paused && !armed && !jobs.length && roomReady && <div className="paused-hint">Press H to draw something into this room</div>}
-        {armed && <div className="armed-hud"><strong>{armed.movingId ? "Editing object" : "Placing object"}</strong><TransformKeys /></div>}
+        {!paused && !mouseLocked && !isTouch && <div className="paused-hint">Click the room to explore · H to draw</div>}
+        {!armed && (isTouch
+          ? <div className="walk-hint"><span>Drag to look · joystick to move</span><span>Draw an object to sketch</span></div>
+          : <div className="walk-hint"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Walk</span><span><kbd>Q</kbd><kbd>E</kbd> Fly</span><span><kbd>Shift</kbd> Faster</span><span><kbd>H</kbd> Draw</span>{mouseLocked && <span>Click an object to edit</span>}</div>)}
+        {paused && !armed && !jobs.length && roomReady && <div className="paused-hint">{isTouch
+          ? "Tap Draw an object to sketch into this room"
+          : "Press H to draw something into this room"}</div>}
+        {armed && <div className="armed-hud"><strong>{armed.movingId ? "Editing object" : "Placing object"}</strong><TransformKeys isTouch={isTouch} /></div>}
         {error && !libraryOpen && <div className="floating-error" role="alert">{error}<button onClick={() => setError("")}>Dismiss</button></div>}
 
         {(jobs.length > 0 || submitting) && <div className="generation-stack">
@@ -543,7 +556,15 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
             const jobInHand = Boolean(jobAsset && armed?.assetId === jobAsset._id);
             const facing = facingByAsset[job.assetId] ?? null;
             const elapsed = Math.max(0, (now - job.startedAt) / 1000);
+            // On a phone this card is large relative to the screen and stacks over the corner
+            // controls, so a finished job clears itself instead of needing the extra tap.
+            // Never for a failure — that card carries the error and the Resume task button, and
+            // vanishing it would hide a real problem — nor while the object is armed, when the
+            // card is showing live placement instructions.
+            const autoDismiss = isTouch && !generating && !jobInHand
+              && jobAsset?.status !== "failed" && (jobPlaced || jobAsset?.status === "ready");
             return <div className="generation-card" key={job.assetId} aria-live="polite">
+              <AutoDismiss when={autoDismiss} delayMs={4000} onFire={() => dismissJob(job.assetId)} />
               {jobAsset?.cutoutUrl && <img src={jobAsset.cutoutUrl} alt="Generated object" />}
               <div className="generation-content">
                 <div className="section-heading">
@@ -551,13 +572,17 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
                     : jobAsset?.status === "failed" ? "Generation failed" : "Creating your object"}</strong>
                   {generating && <span>{elapsed.toFixed(0)}s{typeof jobAsset?.progress === "number" ? ` · ${jobAsset.progress}%` : ""}</span>}
                 </div>
-                <p>{jobAsset?.error || (jobInHand ? "Move over a room surface, then click to place."
+                {/* While generating on a phone the stage pills below already say everything this
+                    paragraph would, and the card is competing for a small screen — drop it and
+                    let the card collapse to heading + elapsed + stages. Terminal states keep it:
+                    that is where the error text and the what-to-do-next copy live. */}
+                {!(isTouch && generating) && <p>{jobAsset?.error || (jobInHand ? "Move over a room surface, then click to place."
                   : jobPlaced ? (facing === "vision" || facing === "sketched" ? "Turned to face the way you sketched it."
                     : facing === "camera" ? "Facing you — the shape was too symmetric to tell which way round it goes."
                     : facing === "unavailable" ? "Facing you — orientation matching is unavailable on this deployment."
                     : "Select your object to adjust it.")
                   : jobAsset?.status === "ready" ? "Choose Place when you're ready."
-                  : "Klein cleans up your sketch, then Tripo builds it with colour.")}</p>
+                  : "Klein cleans up your sketch, then Tripo builds it with colour.")}</p>}
                 {generating && <div className="pipeline-steps">{STAGES.map(([key, label]) =>
                   <span key={key} className={key === stage ? "current" : ""}>{label}</span>)}</div>}
                 <div className="row wrap">
@@ -579,7 +604,7 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
         </div>}
       </>}
       {drawing && <DrawingLayer capture={drawing} onCancel={leaveDrawing} onGenerate={submitDrawing}
-        blocked={submitting} errorMessage={error} />}
+        blocked={submitting} errorMessage={error} isTouch={isTouch} />}
     </main>
   </div>;
 }
@@ -663,8 +688,31 @@ function wrapDegrees(degrees: number) {
   return ((degrees + 180) % 360 + 360) % 360 - 180;
 }
 
+/**
+ * Fires `onFire` once, `delayMs` after `when` turns true, and cancels if `when` goes back to
+ * false first. Renders nothing: it exists so each generation card owns its own timer instead of
+ * the parent juggling a map of them across the re-render it does every second (the `now`
+ * ticker) and on every Convex query update. `onFire` is read through a ref so an inline arrow
+ * at the call site can't restart the timer on each of those re-renders.
+ */
+function AutoDismiss({ when, delayMs, onFire }: { when: boolean; delayMs: number; onFire: () => void }) {
+  const fire = useRef(onFire);
+  fire.current = onFire;
+  useEffect(() => {
+    if (!when) return;
+    const timer = window.setTimeout(() => fire.current(), delayMs);
+    return () => clearTimeout(timer);
+  }, [when, delayMs]);
+  return null;
+}
+
 /** The keys that move an armed object. Shown in the panel and over the canvas. */
-function TransformKeys() {
+function TransformKeys({ isTouch }: { isTouch: boolean }) {
+  if (isTouch) return <ul className="key-legend">
+    <li>Turn / Size fields below</li>
+    <li>Tap a surface to place</li>
+    <li>Cancel button to back out</li>
+  </ul>;
   return <ul className="key-legend">
     <li><kbd>Q</kbd><kbd>E</kbd> Turn <small>Shift: fine</small></li>
     <li><kbd>[</kbd><kbd>]</kbd> Resize <small>or scroll</small></li>

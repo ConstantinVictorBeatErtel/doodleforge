@@ -7,13 +7,29 @@ import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import { worldTransform } from '../lib/worldTransform';
 
-export function SparkSetup() {
+// Mobile GPUs (and iOS Safari's WebGL memory ceiling in particular) can't carry the same splat
+// budget as desktop before the context gets killed outright. Halving it on touch devices trades
+// a bit of visual density for actually staying on screen.
+const LOD_SPLAT_COUNT = typeof window !== "undefined" && (window.matchMedia?.("(pointer: coarse)")?.matches ?? false) ? 250_000 : 500_000;
+
+export function SparkSetup({ onError }: { onError?: (message: string) => void }) {
   const { gl, scene } = useThree();
   useEffect(() => {
-    const spark = new SparkRenderer({ renderer: gl, lodSplatCount: 500_000, lodRenderScale: 1.5, maxStdDev: Math.sqrt(5), sortRadial: true });
+    const spark = new SparkRenderer({ renderer: gl, lodSplatCount: LOD_SPLAT_COUNT, lodRenderScale: 1.5, maxStdDev: Math.sqrt(5), sortRadial: true });
     scene.add(spark);
     return () => { scene.remove(spark); spark.dispose(); };
   }, [gl, scene]);
+  useEffect(() => {
+    const canvas = gl.domElement;
+    // A context loss (common on iOS under GPU memory pressure with large splat scenes) leaves
+    // the canvas permanently black with no other signal — surface it instead of failing silent.
+    const lost = (e: Event) => {
+      e.preventDefault();
+      onError?.("Graphics context was lost, likely from running low on GPU memory for this room. Reload to try again — a smaller capture may render more reliably on this device.");
+    };
+    canvas.addEventListener("webglcontextlost", lost);
+    return () => canvas.removeEventListener("webglcontextlost", lost);
+  }, [gl, onError]);
   return null;
 }
 
