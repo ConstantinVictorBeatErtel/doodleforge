@@ -1,4 +1,4 @@
-# Galatea
+# doodleforge
 
 > **One flow, end to end:** `npm install` → `npm run dev` → open
 > [localhost:5173](http://localhost:5173). Choose a capture, step into the room, walk it
@@ -24,7 +24,7 @@ See `CLAUDE.md` for the agent-oriented overview.
 
 The completed stage room now also has a cleaned 16.17-million-triangle vertex-colored
 mesh and a textured mesh, with approximate window-based scale calibration.
-[Download the full HQ meshes and reports](https://github.com/ConstantinVictorBeatErtel/print_twin/releases/tag/stage-hq-mesh-2026-09-05).
+[Download the full HQ meshes and reports](https://github.com/ConstantinVictorBeatErtel/doodleforge/releases/tag/stage-hq-mesh-2026-09-05).
 See [the export, cleanup and scale guide](docs/HIGH_QUALITY_MESH.md) for local viewing,
 exact transforms and limitations. These are separate editing assets; the web app
 continues to use its saved splat and collider. The meshes are not yet watertight for printing.
@@ -112,7 +112,7 @@ npm run world -- resume --job hackathon-room-video-01
 
 This run completed successfully.
 [Result and quality assessment](docs/FIRST_WORLD_RESULT.md).
-[Download the full room and prepared captures](https://github.com/ConstantinVictorBeatErtel/print_twin/releases/tag/room-capture-2026-09-05).
+[Download the full room and prepared captures](https://github.com/ConstantinVictorBeatErtel/doodleforge/releases/tag/room-capture-2026-09-05).
 The release includes the full-resolution splat and all other returned room assets.
 [Capture-to-world workflow and people removal](docs/ROOM_CREATION_WORKFLOW.md).
 The original room contains people. The user subsequently supplied a stage-view
@@ -120,13 +120,13 @@ capture and authorized proceeding: `hackathon-stage-no-people-01` is complete,
 using five cleaned photos. Its panorama shows no visible people and faces into
 the hall from the demo stage.
 [Open the stage world](https://marble.worldlabs.ai/world/82f39764-5224-4574-8328-8a747f42ed3e),
-[download its full assets and cleaned inputs](https://github.com/ConstantinVictorBeatErtel/print_twin/releases/tag/stage-room-2026-09-05),
+[download its full assets and cleaned inputs](https://github.com/ConstantinVictorBeatErtel/doodleforge/releases/tag/stage-room-2026-09-05),
 or read the [generation and quality record](docs/STAGE_WORLD_RESULT.md).
 
 The latest version adds three cleaned rear-stage photos, completing an eight-view
 reconstruction with the screen, cabinet, exit sign and plants behind the stage.
 [Open the updated room](https://marble.worldlabs.ai/world/262dd7ba-d156-46a1-8445-f62bc60e1265),
-[download full assets and all inputs](https://github.com/ConstantinVictorBeatErtel/print_twin/releases/tag/stage-rear-2026-09-05),
+[download full assets and all inputs](https://github.com/ConstantinVictorBeatErtel/doodleforge/releases/tag/stage-rear-2026-09-05),
 or read the [rear capture and quality record](docs/STAGE_REAR_UPDATE.md).
 No people are visible in its panorama; physical calibration and browser navigation
 remain unverified.

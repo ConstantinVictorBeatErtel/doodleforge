@@ -12,7 +12,7 @@ Generation completed and both full GLB variants were retrieved. The UI settings 
 
 ## Completed results and downloads
 
-[Download all full mesh files and reports](https://github.com/ConstantinVictorBeatErtel/print_twin/releases/tag/stage-hq-mesh-2026-09-05). Large binaries are GitHub Release assets, while tools and this guide are tracked in Git. The existing app still uses its saved splat and collider; this mesh release does not silently replace them.
+[Download all full mesh files and reports](https://github.com/ConstantinVictorBeatErtel/doodleforge/releases/tag/stage-hq-mesh-2026-09-05). Large binaries are GitHub Release assets, while tools and this guide are tracked in Git. The existing app still uses its saved splat and collider; this mesh release does not silently replace them.
 
 | Variant | Source triangles | Cleaned triangles | Removed | Intended use |
 | --- | ---: | ---: | --- | --- |

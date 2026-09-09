@@ -28,7 +28,7 @@ export async function inspectInput(path) {
   if (basename(path).length > 64) throw new Error('Input filename exceeds API limit of 64 characters.');
   return { path, kind, extension, bytes: info.size, sha256: await hashFile(path) };
 }
-export function makeRequest(inputs, ids, { model = 'marble-1.1-plus', name = 'Print the World room', prompt } = {}) {
+export function makeRequest(inputs, ids, { model = 'marble-1.1-plus', name = 'doodleforge room', prompt } = {}) {
   if (!MODELS.includes(model)) throw new Error('Unsupported model');
   if (!name || name.length > 64) throw new Error('Name must be 1–64 characters');
   if (prompt && prompt.length > 2000) throw new Error('Prompt exceeds 2000 characters');

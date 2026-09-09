@@ -38,7 +38,8 @@ import { glbToStl, downloadBlob, safeFilename, PRINT_HEIGHT_MM } from "./lib/stl
 const SURFACES = { collider: true, splat: true, plane: false };
 // Plural: several sketches can be in flight (drawn, uploading, generating) at once, each
 // tracked independently so one job's reload recovery never clobbers another's.
-const JOBS_KEY = "galatea-sketch-jobs-v1";
+const JOBS_KEY = "doodleforge-sketch-jobs-v1";
+const LEGACY_JOBS_KEY = "galatea-sketch-jobs-v1";
 // Above this the stroke cutout is dropped from localStorage rather than risking the quota.
 const STROKE_BUDGET = 1_500_000;
 const STAGES = [
@@ -67,7 +68,7 @@ type PlaceFn = (args: PlacementInput & { room: string }) => Promise<Id<"placemen
 
 function loadJobs(): JobEntry[] {
   try {
-    const saved = JSON.parse(localStorage.getItem(JOBS_KEY) || "null");
+    const saved = JSON.parse(localStorage.getItem(JOBS_KEY) || localStorage.getItem(LEGACY_JOBS_KEY) || "null");
     if (!Array.isArray(saved)) return [];
     return saved.filter((j): j is JobEntry =>
       Boolean(j?.assetId) && j.anchor?.cameraWorld?.length === 16 && j.anchor?.projection?.length === 16 && Array.isArray(j.anchor?.strokes));

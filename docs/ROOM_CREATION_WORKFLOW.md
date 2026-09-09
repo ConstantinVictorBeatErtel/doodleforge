@@ -72,6 +72,6 @@ The stage capture's cleanup was run as five built-in imagegen photo edits, one t
 
 ## Download and provenance
 
-The [first room release](https://github.com/ConstantinVictorBeatErtel/print_twin/releases/tag/room-capture-2026-09-05) contains all generated binary assets, a portable manifest, validation results, generation provenance, and a separate archive of all 13 prepared source captures. The current release still contains people.
+The [first room release](https://github.com/ConstantinVictorBeatErtel/doodleforge/releases/tag/room-capture-2026-09-05) contains all generated binary assets, a portable manifest, validation results, generation provenance, and a separate archive of all 13 prepared source captures. The current release still contains people.
 
 `scripts/package_room.py` packages the files without API credentials, temporary signed provider URLs, audio, or original device metadata. The original HEIC/MOV files remain local and untouched. Asset SHA-256 checksums permit verification after download. This repository and its release downloads are public; the original Marble world itself keeps its existing account permissions.

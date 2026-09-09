@@ -3,7 +3,7 @@
 Completed September 5, 2026 using `IMG_6872.MOV`, converted to a 9.94-second SDR H.264 MP4.
 
 - Model: `marble-1.1-plus`
-- World: [Print the World — Hackathon Room](https://marble.worldlabs.ai/world/b7fc3a55-8fc1-4ef0-8ac8-705c3abe7d5a) (private to the account)
+- World: [doodleforge — Hackathon Room](https://marble.worldlabs.ai/world/b7fc3a55-8fc1-4ef0-8ac8-705c3abe7d5a) (private to the account)
 - Job: `hackathon-room-video-01`
 - Operation: `b83a3ab5-ddd0-4418-bbe8-1784cc280a6a`
 - Started: 2026-09-05 18:41:16 UTC; saved: 18:48:21 UTC (about 7 minutes including upload/download)

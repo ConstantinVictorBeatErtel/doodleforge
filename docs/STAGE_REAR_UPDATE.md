@@ -35,7 +35,7 @@ The camera origin and direction are reference constraints, not a verified metric
 - Operation: `8a38eabe-c4ad-4319-8f10-592a02789fa5`
 - Started: 2026-09-05 19:44:01 UTC; saved: 19:59:23 UTC (15 minutes 22 seconds including transfer).
 - API balance: 3,800 → 2,200 credits; observed decrease 1,600 credits. Built-in imagegen usage is separate.
-- [Full room, all prepared stage captures, eight cleaned photos and exact prompts/hashes](https://github.com/ConstantinVictorBeatErtel/print_twin/releases/tag/stage-rear-2026-09-05).
+- [Full room, all prepared stage captures, eight cleaned photos and exact prompts/hashes](https://github.com/ConstantinVictorBeatErtel/doodleforge/releases/tag/stage-rear-2026-09-05).
 - Local manifest: `data/worlds/hackathon-stage-complete-02/manifest.json`.
 
 Visual panorama review: the missing rear now contains the black screen, white cabinet, exit sign and flanking plants. The screen lies across the left/right edge of the flat 360° panorama, which represents the rear seam. The stage foreground and forward dark alcove/yellow lamp remain recognizable. No people or human screen reflections are visible in this review. This improves the visual completeness over the previous panorama, which repeated room features into the unseen rear.

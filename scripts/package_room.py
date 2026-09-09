@@ -59,7 +59,7 @@ def package(room, captures, output, cleanup=None):
                         'Start with assets/splat-500k.spz for a laptop viewer. Full-resolution asset: assets/splat-full_res.spz.\n'
                         'manifest.json contains relative asset paths, checksums, and coordinate metadata.\n'
                         'Physical calibration, collider alignment, and browser rendering are unverified.\n'
-                        'Process: https://github.com/ConstantinVictorBeatErtel/print_twin/blob/main/docs/ROOM_CREATION_WORKFLOW.md\n')
+                        'Process: https://github.com/ConstantinVictorBeatErtel/doodleforge/blob/main/docs/ROOM_CREATION_WORKFLOW.md\n')
     capture_zip = output/'hackathon-prepared-captures.zip'
     inventory = []
     with zipfile.ZipFile(capture_zip, 'w', compression=zipfile.ZIP_STORED) as archive:

@@ -61,8 +61,8 @@ export const orientSketch = action({
           "Content-Type": "application/json",
           // OpenRouter attribution headers — optional, and how a request is identified on the
           // dashboard when you are working out what spent the credits.
-          "HTTP-Referer": "https://github.com/galatea/spatial-hack-starter",
-          "X-Title": "Galatea",
+          "HTTP-Referer": "https://github.com/ConstantinVictorBeatErtel/doodleforge",
+          "X-Title": "doodleforge",
         },
         body: JSON.stringify({
           model: process.env.OPENROUTER_VISION_MODEL?.trim() || DEFAULT_MODEL,

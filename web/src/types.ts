@@ -1,4 +1,4 @@
-/** Shared domain types for Print the World. Match HACKATHON_PLAN.md record names. */
+/** Shared domain types for doodleforge. Match HACKATHON_PLAN.md record names. */
 
 export type Vec3 = [number, number, number];
 export type Quat = [number, number, number, number];

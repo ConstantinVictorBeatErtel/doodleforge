@@ -1,4 +1,4 @@
-# Spatial Hack starter — context for coding agents
+# doodleforge — context for coding agents
 
 One-day hackathon (World Labs × Tripo × mint.gg × Convex). Goal: ship a 2-minute demo by 6 PM. Bias to working code over abstractions.
 

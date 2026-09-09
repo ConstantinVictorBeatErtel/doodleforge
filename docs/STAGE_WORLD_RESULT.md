@@ -40,7 +40,7 @@ The stage viewpoint is a generation constraint and reference, not a measured cam
 - Start: September 5, 2026, 19:20:14 UTC; saved: 19:26:37 UTC (about 6 minutes 23 seconds including uploads/downloads).
 - API balance: 5,400 → 3,800 credits; observed decrease 1,600 credits ($1.28 at standard World Labs pricing). Built-in imagegen usage is separate from that API balance.
 - Local manifest: `data/worlds/hackathon-stage-no-people-01/manifest.json`
-- [Download full assets, prepared sources, cleaned photos, and provenance](https://github.com/ConstantinVictorBeatErtel/print_twin/releases/tag/stage-room-2026-09-05).
+- [Download full assets, prepared sources, cleaned photos, and provenance](https://github.com/ConstantinVictorBeatErtel/doodleforge/releases/tag/stage-room-2026-09-05).
 
 All seven downloaded assets passed file-integrity checks: 98,304 / 150,000 / 500,000 / 1,920,000-point SPZ files, one collider GLB with 112,794 vertices, a 4608×2304 panorama PNG, and a 720×480 thumbnail WebP. SPZ gzip streams passed CRC validation; GLB structure and image decoding passed.
 

@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { createSettings } from '../server/settings.js';
 
 async function setup(t, getEnv = () => ({})) {
-  const dir = await mkdtemp(join(tmpdir(), 'print-twin-settings-'));
+  const dir = await mkdtemp(join(tmpdir(), 'doodleforge-settings-'));
   const file = join(dir, 'api-keys.json');
   const store = createSettings({ file, getEnv });
   const server = createServer((req, res) => store.middleware(req, res, () => { res.writeHead(404); res.end(); }));
