@@ -45,11 +45,16 @@ first-person room viewer. Everything generates live; there is no bundled/demo ro
 no `?live=1` flag. Picking a photo or video uploads it to Convex storage and calls
 `worlds.startFromMedia` (mutation), which inserts a `generating` world row and schedules
 `internal.worlds.runFromMedia` to call Marble (`world_prompt.type: "image"|"video"`,
-content `{ uri }` pointing at the Convex storage URL), poll the operation, and cache the
+a `source: "uri"` reference in `image_prompt` / `video_prompt` pointing at the Convex storage URL), poll the operation, and cache the
 splat/collider/pano into storage — the same `runGenerate` helper `generateFromText` uses.
-`App.tsx` opens `WorldApp` with that world's id immediately; `WorldApp`'s `roomStatus`
-reads the row reactively (`useQuery(api.worlds.list)`) and shows "Building your world…"
-until it flips to `ready`, so the multi-minute generation never blocks the UI. Picking a
+`App.tsx` opens `WorldApp` with the returned ID immediately. Fast preview
+(`marble-1.0-draft`) is the default; the capture quality selector offers `marble-1.1`.
+`runFromMedia` submits once, stores the provider operation, and schedules short
+`pollGeneration` actions every 3 seconds. Each attempt has a deadline (8 minutes
+for draft, 15 for detail) and a watchdog, with matching deadline guards against
+stale checks. `resumeGeneration` rechecks an existing operation without a new paid
+POST. Required splat/collider downloads run concurrently; optional panorama caching
+runs after readiness. The viewer reads the world `stage` reactively. Picking a
 `.zip` instead goes through `src/lib/ConvexProjectClient.ts`, which unpacks
 `readWorldZip` results into Convex storage via `api.worlds.importUploaded` — that path is
 for a world already generated elsewhere, not a stand-in.

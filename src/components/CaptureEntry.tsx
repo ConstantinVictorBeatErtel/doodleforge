@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 
-export function CaptureEntry({ onCreate }: { onCreate: (file: File) => void }) {
+export type CaptureModel = 'marble-1.0-draft' | 'marble-1.1';
+
+export function CaptureEntry({ onCreate }: { onCreate: (file: File, model: CaptureModel) => void }) {
+  const [model, setModel] = useState<CaptureModel>('marble-1.0-draft');
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState('');
   const [error, setError] = useState('');
@@ -29,6 +32,7 @@ export function CaptureEntry({ onCreate }: { onCreate: (file: File) => void }) {
     const video = ['video/mp4', 'video/quicktime', 'video/webm'].includes(next.type);
     const max = video ? 100 : 20;
     if (!image && !video) return setError('Choose a JPG, PNG, WebP, MP4, MOV, WebM, or ZIP file.');
+    if (!next.size) return setError('This file is empty. Choose another capture.');
     if (next.size > max * 1024 * 1024) return setError(`${video ? 'Videos' : 'Images'} must be ${max} MB or smaller.`);
     if (video) {
       const probe = document.createElement('video');
@@ -71,9 +75,22 @@ export function CaptureEntry({ onCreate }: { onCreate: (file: File) => void }) {
         <span className="capture-drop-icon">＋</span><strong>Choose a capture</strong><small>Photo, video, or ZIP</small>
       </button>}
       {!file && <div className="capture-actions"><button type="button" onClick={() => photoRef.current?.click()}>Take photo</button><button type="button" onClick={() => videoRef.current?.click()}>Record video</button><button type="button" onClick={() => zipRef.current?.click()}>Upload ZIP</button></div>}
+      {!isZip && <div className="capture-quality">
+        <label htmlFor="world-quality">Creation quality</label>
+        <select id="world-quality" value={model} onChange={e => setModel(e.target.value as CaptureModel)}>
+          <option value="marble-1.0-draft">Fast preview</option>
+          <option value="marble-1.1">Higher detail</option>
+        </select>
+        <p>{model === 'marble-1.0-draft'
+          ? 'A quick, explorable room. Photos are fastest; videos add more views and preparation time.'
+          : 'A more detailed room with Marble 1.1. Allow several minutes and more generation credits.'}</p>
+        <small>{model === 'marble-1.0-draft'
+          ? 'Draft generation is about 20 seconds after preparation; video preparation can take about 2 minutes. Upload and queue time vary.'
+          : 'World generation is about 5 minutes, plus preparation, upload, and queue time.'}</small>
+      </div>}
       {error && <p className="capture-error" role="alert">{error}</p>}
-      <button type="button" className="capture-create" disabled={!file} onClick={() => file && onCreate(file)}>Create my world</button>
-      <p className="capture-footnote">A photo or video builds a real World Labs splat; a ZIP imports a world you already generated.</p>
+      <button type="button" className="capture-create" disabled={!file} onClick={() => file && onCreate(file, model)}>Create my world</button>
+      <p className="capture-footnote">A photo or video builds your own World Labs room; a ZIP imports a world you already generated.</p>
     </div>
   </main>;
 }

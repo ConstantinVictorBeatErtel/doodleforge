@@ -34,8 +34,24 @@ continues to use its saved splat and collider. The meshes are not yet watertight
 The capture entry flow and room viewer live together in `src/`. Select a photo, short
 video, or ZIP, then press **Create my world**. A photo or video uploads to Convex
 storage and starts a real World Labs (Marble) generation — the room viewer opens
-immediately and shows "Building your world…" while it finishes in the background
-(usually 1–5 minutes). A `.zip` (a world already generated elsewhere, e.g. via the
+immediately and shows generation progress while it finishes in the background.
+**Fast preview** is the default (Marble 1.0 Draft); choose **Higher detail** before
+creating for Marble 1.1. Draft generation takes roughly 20 seconds after input
+preparation; preparing a photo is roughly 30 seconds and video roughly 2 minutes.
+Higher-detail world generation is roughly 5 minutes plus preparation. Upload,
+queue, and asset-download time vary; these are provider estimates, not guarantees.
+[World Labs timing guide](https://docs.worldlabs.ai/).
+
+The backend checks progress every 3 seconds in scheduled actions, preserving the
+operation ID across reloads. It downloads the 500k splat and collider concurrently,
+then opens the room without waiting for its optional panorama thumbnail. Failed
+downloads never count as usable room assets. After 8 minutes for a fast preview or
+15 for higher detail, the UI offers **Resume generation** to check the same saved
+operation; it does not submit another paid generation. A provider-declared failure
+requires a new capture attempt instead. Generating and failed rooms can be reopened
+from **Existing worlds** to check progress or resume.
+
+A `.zip` (a world already generated elsewhere, e.g. via the
 capture CLI or a Marble export) is unpacked in the browser and imported with no wait
 and no provider call. Native phone photo/video capture buttons are also available.
 
@@ -218,6 +234,7 @@ are in room metres; this is visual placement, not a physical calibration.
 npx convex dev            # login, creates deployment, writes .env.local (VITE_CONVEX_URL)
 npx convex env set WLT_API_KEY <key>
 npx convex env set TRIPO_API_KEY <key>
+npx convex env set FAL_KEY <key>  # required for sketch-to-object generation
 npm run dev               # http://localhost:5173/?room=lobby
 ```
 

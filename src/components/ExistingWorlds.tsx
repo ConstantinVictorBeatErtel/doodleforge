@@ -32,7 +32,6 @@ export function ExistingWorlds({ worlds, activeId, onSelect, corner = "top-right
       </div>
       {!worlds.length && <p className="hint">No worlds generated yet.</p>}
       {worlds.map((w) => <button type="button" key={w._id} className={`existing-worlds-row ${w._id === activeId ? "active" : ""}`}
-        disabled={w.status !== "ready"}
         onClick={() => { onSelect(w._id); setOpen(false); }}>
         {w.panoUrl ? <img src={w.panoUrl} alt="" /> : <span className="existing-worlds-thumb" aria-hidden="true">◎</span>}
         <span className="existing-worlds-label">

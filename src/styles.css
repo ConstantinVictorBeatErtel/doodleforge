@@ -24,7 +24,7 @@ body,
 }
 
 .capture-entry {
-  min-height: 100%;
+  height: 100%;
   overflow: auto;
   display: grid;
   place-items: center;
@@ -330,3 +330,13 @@ body,
   .armed-hud { width: calc(100% - 24px); bottom: calc(42vh + 20px + env(safe-area-inset-bottom)); }
   .armed-hud .key-legend { grid-template-columns: 1fr 1fr; }
 }
+
+.capture-quality { margin: 20px 0; text-align: left; }
+.capture-quality label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.capture-quality select { width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-input); color: var(--fg); color-scheme: dark; font: inherit; }
+.capture-quality p { font-size: 13px; line-height: 1.5; margin: 10px 0 6px; }
+.capture-quality small { display: block; color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+.world-generation-status { position: absolute; z-index: 4; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(440px, calc(100% - 32px)); max-height: 70%; overflow: auto; padding: 24px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface-panel); font-size: 14px; line-height: 1.5; }
+.world-generation-status h2 { margin-top: 0; font-size: 20px; }
+.world-generation-status .row { flex-wrap: wrap; }

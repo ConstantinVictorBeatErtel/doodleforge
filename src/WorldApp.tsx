@@ -113,6 +113,7 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
   const resumeSketch = useMutation(api.assets.resumeSketch);
   const uploadUrl = useMutation(api.worlds.generateUploadUrl);
   const join = useMutation(api.players.join);
+  const resumeWorld = useMutation(api.worlds.resumeGeneration);
   const genWorld = useAction(api.worlds.generateFromText);
   const orient = useAction(api.orientation.orientSketch);
 
@@ -303,7 +304,7 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
     worldBusy.current = true;
     setGeneratingWorld(true); setError("");
     try {
-      await genWorld({ prompt: worldPrompt, model: "marble-1.1" });
+      selectWorld(await genWorld({ prompt: worldPrompt }));
     } catch (e) {
       setError(`Could not create the world: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -332,7 +333,7 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
   const roomStatus = error ? error
     : roomReady ? "Ready"
     : world?.splatUrl ? "Loading room…"
-    : world?.status === "generating" ? "Building your world (this can take a few minutes)…"
+    : world?.status === "generating" ? (world.stage ?? "Building your world…")
     : world?.status === "failed" ? `World generation failed: ${world.error ?? "unknown error"}`
     : "No room loaded";
   // Any number of sketches may already be generating in the background — that never blocks
@@ -374,6 +375,7 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
     <aside id="object-library" className={`editor-panel ${libraryOpen ? "open" : ""}`} inert={!libraryOpen || !!drawing}>
       <div className="section-heading"><h2>Objects &amp; placement</h2><button aria-label="Close objects" onClick={() => setLibraryOpen(false)}>×</button></div>
       <p className="muted room-status" role="status">{roomStatus}</p>
+
       <div className="row">
         <button onClick={() => setReset((n) => n + 1)}>Reset view</button>
         <button onClick={onNewWorld}>New world</button>
@@ -530,6 +532,18 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
       {!drawing && <>
         {isTouch && !paused && !armed && <TouchControls inputRef={touchInputRef} />}
         <div className="canvas-badge"><span className="live-dot" />{roomReady ? "LIVE ROOM" : roomStatus}</div>
+        {world && world.status !== "ready" && <div className="world-generation-status" role={world.status === "failed" ? "alert" : "status"}>
+          <h2>{world.status === "failed" ? "Your room needs attention" : "Creating your room"}</h2>
+          <p>{world.status === "failed" ? world.error : world.stage ?? "Building your world…"}</p>
+          {world.status === "generating" && <p className="muted">You can leave this screen and reopen your room from Existing worlds.</p>}
+          <div className="row">
+            {world.status === "failed" && world.retryable && world.operationId && <button onClick={() => {
+              setError("");
+              void resumeWorld({ id: world._id }).catch(e => setError(e instanceof Error ? e.message : String(e)));
+            }}>Resume generation · no new world charge</button>}
+            <button onClick={onNewWorld}>Back to captures</button>
+          </div>
+        </div>}
         {mouseLocked && <div className="crosshair" />}
         {!paused && !mouseLocked && !isTouch && <div className="paused-hint">Click the room to explore · H to draw</div>}
         {!armed && (isTouch

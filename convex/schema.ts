@@ -10,6 +10,9 @@ export default defineSchema({
     status: v.union(v.literal("generating"), v.literal("ready"), v.literal("failed")),
     worldId: v.optional(v.string()),          // World Labs world_id
     operationId: v.optional(v.string()),
+    generationDeadline: v.optional(v.number()),
+    stage: v.optional(v.string()),
+    retryable: v.optional(v.boolean()),
     splatStorageId: v.optional(v.id("_storage")),   // cached 500k .spz
     splatFileName: v.optional(v.string()),    // e.g. "splat-500k.spz" — Convex storage URLs have no extension
     colliderStorageId: v.optional(v.id("_storage")), // cached collider .glb

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useConvex, useMutation, useQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import type { Id } from '../convex/_generated/dataModel';
-import { CaptureEntry } from './components/CaptureEntry';
+import { CaptureEntry, type CaptureModel } from './components/CaptureEntry';
 import { ExistingWorlds } from './components/ExistingWorlds';
 import { ConvexProjectClient } from './lib/ConvexProjectClient';
 import WorldApp from './WorldApp';
@@ -33,7 +33,7 @@ export default function App() {
   // A photo or video kicks off a real Marble generation (kept short: upload, then hand off
   // to the room viewer, which watches the world's status reactively — see WorldApp's
   // roomStatus). A ZIP is an already-generated world, unpacked and pushed into storage.
-  const createFromCapture = async (file: File) => {
+  const createFromCapture = async (file: File, model: CaptureModel) => {
     if (busy.current) return;
     busy.current = true;
     const request = ++activeRequest.current;
@@ -50,7 +50,7 @@ export default function App() {
         if (!response.ok) throw new Error(`Upload failed (HTTP ${response.status}).`);
         const { storageId } = await response.json() as { storageId?: string };
         if (!storageId) throw new Error('Storage did not return an ID for the upload.');
-        id = await startFromMedia({ storageId: storageId as Id<'_storage'>, kind: file.type.startsWith('video/') ? 'video' : 'image', name: file.name });
+        id = await startFromMedia({ storageId: storageId as Id<'_storage'>, kind: file.type.startsWith('video/') ? 'video' : 'image', name: file.name, model });
       }
       if (request !== activeRequest.current) return;
       openWorld(id);
@@ -91,7 +91,7 @@ export default function App() {
     <div className="capture-card">
       {!error && <div className="capture-spinner" aria-hidden="true" />}
       <p className="capture-kicker">doodleforge</p>
-      <h1>{error ? 'Unable to build the world.' : 'Building your world…'}</h1>
+      <h1>{error ? 'Unable to build the world.' : 'Uploading your capture…'}</h1>
       <p className="capture-copy">{error || 'Uploading your capture and starting a real World Labs generation — the room will build in the background.'}</p>
       {error && <>
         <button className="entry-secondary" onClick={newWorld}>Back</button>
@@ -101,7 +101,7 @@ export default function App() {
 
   if (worldId) return <WorldApp key={worldId} initialWorldId={worldId} onNewWorld={newWorld} />;
   return <>
-    <CaptureEntry onCreate={(file) => void createFromCapture(file)} />
+    <CaptureEntry onCreate={(file, model) => void createFromCapture(file, model)} />
     <ExistingWorlds worlds={worlds} onSelect={openWorld} corner="bottom-right" />
   </>;
 }
