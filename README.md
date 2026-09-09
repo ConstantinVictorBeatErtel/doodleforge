@@ -1,3 +1,20 @@
+# Argus: LEO Ground-Station Network Design
+
+> [Project repository](https://github.com/ConstantinVictorBeatErtel/project_argus)
+
+Argus models low-Earth-orbit satellite ground-station placement as a fixed-charge
+facility-location and maximum-coverage problem. It combines SGP4 orbital
+propagation, WGS84 line-of-sight geometry, and a sparse visibility graph with a
+mixed-integer linear program that selects a budgeted set of gateway sites and
+traces the cost-coverage Pareto frontier.
+
+The project compares uniform, city-point, and WorldPop demand models while
+accounting for elevation, backhaul, and geopolitical feasibility constraints. In
+the final analysis, the WorldPop model achieved 43.3% population-weighted
+coverage under a 20-station budget and 25° elevation threshold, and the
+geopolitical feasibility constraint brought the median distance to operational
+Starlink gateways down to 881 km.
+
 # Galatea
 
 > **One flow, end to end:** `npm install` → `npm run dev` → open
