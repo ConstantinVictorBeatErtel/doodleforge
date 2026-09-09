@@ -18,9 +18,11 @@ function generateId(): string {
 
 // Anonymous per-browser session (good enough for a hackathon; swap for Convex Auth/Clerk later).
 export function getSessionId(): string {
-  const k = "spatial-hack-session";
-  let id = localStorage.getItem(k);
+  const k = "doodleforge-session";
+  const legacyKey = "spatial-hack-session";
+  let id = localStorage.getItem(k) || localStorage.getItem(legacyKey);
   if (!id) { id = generateId(); localStorage.setItem(k, id); }
+  else if (!localStorage.getItem(k)) localStorage.setItem(k, id);
   return id;
 }
 export const randomColor = () => `hsl(${Math.floor(Math.random() * 360)} 80% 60%)`;
