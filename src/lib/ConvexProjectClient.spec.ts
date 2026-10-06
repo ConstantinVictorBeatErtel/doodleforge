@@ -12,8 +12,10 @@ function backend(existing = false) {
   const imports: unknown[] = [];
   const query = vi.fn(async (_reference: unknown, _args: { worldId: string; splatFileName?: string }) => existing ? { _id: 'convex-world', splatUrl: 'https://storage.test/splat' } : null);
   const mutation = vi.fn(async (reference, args) => {
-    if (getFunctionName(reference) === 'worlds:generateUploadUrl') return 'https://storage.test/upload';
-    imports.push(args);
+    const name = getFunctionName(reference);
+    if (name === 'worlds:generateUploadUrl') return { url: 'https://storage.test/upload', token: 'upload-ticket' };
+    if (name === 'worlds:claimUpload') return null;
+    if (name === 'worlds:importUploaded') imports.push(args);
     return 'convex-world';
   });
   return { client: new ConvexProjectClient({ query, mutation } as unknown as ConvexReactClient), imports, query, mutation };

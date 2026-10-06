@@ -11,7 +11,9 @@ export default function App() {
   const convex = useConvex();
   const client = useMemo(() => new ConvexProjectClient(convex), [convex]);
   const generateUploadUrl = useMutation(api.worlds.generateUploadUrl);
+  const claimUpload = useMutation(api.worlds.claimUpload);
   const startFromMedia = useMutation(api.worlds.startFromMedia);
+  const deleteWorld = useMutation(api.worlds.deleteWorld);
   const worlds = useQuery(api.worlds.list) ?? [];
 
   const [worldId, setWorldId] = useState(() => new URLSearchParams(location.search).get('world'));
@@ -45,11 +47,12 @@ export default function App() {
       if (isZip) {
         id = await client.importZip(file);
       } else {
-        const uploadUrl = await generateUploadUrl();
-        const response = await fetch(uploadUrl, { method: 'POST', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file });
+        const ticket = await generateUploadUrl();
+        const response = await fetch(ticket.url, { method: 'POST', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file });
         if (!response.ok) throw new Error(`Upload failed (HTTP ${response.status}).`);
         const { storageId } = await response.json() as { storageId?: string };
         if (!storageId) throw new Error('Storage did not return an ID for the upload.');
+        await claimUpload({ token: ticket.token, storageId: storageId as Id<'_storage'> });
         id = await startFromMedia({ storageId: storageId as Id<'_storage'>, kind: file.type.startsWith('video/') ? 'video' : 'image', name: file.name, model });
       }
       if (request !== activeRequest.current) return;
@@ -102,6 +105,6 @@ export default function App() {
   if (worldId) return <WorldApp key={worldId} initialWorldId={worldId} onNewWorld={newWorld} />;
   return <>
     <CaptureEntry onCreate={(file, model) => void createFromCapture(file, model)} />
-    <ExistingWorlds worlds={worlds} onSelect={openWorld} corner="bottom-right" />
+    <ExistingWorlds worlds={worlds} onSelect={openWorld} onDelete={(id) => { void deleteWorld({ id: id as Id<'worlds'> }).catch((e) => setError(e instanceof Error ? e.message : 'Could not delete this room.')); }} corner="bottom-right" />
   </>;
 }

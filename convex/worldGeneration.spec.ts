@@ -5,10 +5,15 @@ import { api, internal } from './_generated/api';
 import schema from './schema';
 import type { Id } from './_generated/dataModel';
 
-const modules = import.meta.glob('./**/*.ts');
-beforeEach(() => { vi.useFakeTimers(); vi.stubEnv('WLT_API_KEY', 'test-key'); });
+const modules = import.meta.glob("./**/*.ts");
+const TEST_IDENTITY = { tokenIdentifier: "test|user", subject: "user", issuer: "https://test.clerk.accounts.dev" };
+const asUser = () => convexTest(schema, modules).withIdentity(TEST_IDENTITY);
+beforeEach(() => {
+  vi.useFakeTimers(); vi.stubEnv('WLT_API_KEY', 'test-key');
+  vi.stubEnv('WORLD_LABS_MAX_DRAFT_USD', '5'); vi.stubEnv('WORLD_LABS_MAX_STANDARD_USD', '5'); vi.stubEnv('WORLD_LABS_MAX_PLUS_USD', '5');
+});
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
-async function drain(t: ReturnType<typeof convexTest>) {
+async function drain(t: any) {
   // Let each action finish its mocked HTTP work before advancing to its watchdog.
   for (let i = 0; vi.getTimerCount() && i < 1000; i++) {
     await vi.advanceTimersByTimeAsync(1000);
@@ -18,30 +23,31 @@ async function drain(t: ReturnType<typeof convexTest>) {
 }
 const json = (data: unknown) => new Response(JSON.stringify(data), { headers: { 'Content-Type': 'application/json' } });
 
-async function media(t: ReturnType<typeof convexTest>, type = 'image/jpeg') {
-  return t.run(async ctx => {
+async function media(t: any, type = 'image/jpeg') {
+  return t.run(async (ctx: any) => {
     const id = await ctx.storage.store(new Blob(['capture'], { type }));
     // convex-test 0.0.56 omits contentType when emulating a browser upload.
     await ctx.db.patch(id as never, { contentType: type } as never);
+    await ctx.db.insert('uploads', { ownerId: TEST_IDENTITY.tokenIdentifier, token: crypto.randomUUID(), storageId: id, expiresAt: Date.now() + 60_000 });
     return id;
   });
 }
 
 test('missing provider key fails before creating a generation', async () => {
   vi.stubEnv('WLT_API_KEY', '');
-  const t = convexTest(schema, modules);
+  const t = asUser();
   await expect(t.mutation(api.worlds.startFromMedia, { storageId: await media(t), kind: 'image' })).rejects.toThrow('WLT_API_KEY');
   expect(await t.query(api.worlds.list)).toHaveLength(0);
 });
 
 test('media kind must match the stored upload before scheduling a paid request', async () => {
-  const t = convexTest(schema, modules);
+  const t = asUser();
   await expect(t.mutation(api.worlds.startFromMedia, { storageId: await media(t, 'video/mp4'), kind: 'image' })).rejects.toThrow('image');
   expect(await t.query(api.worlds.list)).toHaveLength(0);
 });
 
 test.each(['image', 'video'] as const)('a %s upload uses a real URI and the fast model by default', async kind => {
-  const t = convexTest(schema, modules);
+  const t = asUser();
   const fetcher = vi.fn(async (_url: string, _init?: RequestInit) => json({ operation_id: 'op', done: true, error: { message: 'Provider rejected capture' } }));
   vi.stubGlobal('fetch', fetcher);
   const id = await t.mutation(api.worlds.startFromMedia, { storageId: await media(t, kind === 'image' ? 'image/jpeg' : 'video/mp4'), kind });
@@ -54,7 +60,7 @@ test.each(['image', 'video'] as const)('a %s upload uses a real URI and the fast
 });
 
 test('detail selection is honored, pending operations poll without resubmission, and optional panorama failure does not block readiness', async () => {
-  const t = convexTest(schema, modules);
+  const t = asUser();
   let polls = 0;
   const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
     const path = String(url);
@@ -74,7 +80,7 @@ test('detail selection is honored, pending operations poll without resubmission,
 });
 
 test('failed asset downloads never get stored as a ready splat', async () => {
-  const t = convexTest(schema, modules);
+  const t = asUser();
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     if (init?.method === 'POST') return json({ operation_id: 'op', done: true, response: { world_id: 'room' } });
     if (url.includes('worlds/')) return json({ assets: { splats: { spz_urls: { '500k': 'https://assets/splat' } } } });
@@ -86,7 +92,7 @@ test('failed asset downloads never get stored as a ready splat', async () => {
 });
 
 test('a slow operation times out and resumes the same paid operation once, ignoring stale work', async () => {
-  const t = convexTest(schema, modules);
+  const t = asUser();
   let complete = false;
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
     if (init?.method === 'POST') return json({ operation_id: 'same-op', done: false });
@@ -111,7 +117,7 @@ test('a slow operation times out and resumes the same paid operation once, ignor
 });
 
 test('an ambiguous submit failure is not automatically retried', async () => {
-  const t = convexTest(schema, modules);
+  const t = asUser();
   const fetcher = vi.fn(async () => { throw new Error('Connection lost'); });
   vi.stubGlobal('fetch', fetcher);
   const id = await t.mutation(api.worlds.startFromMedia, { storageId: await media(t), kind: 'image' });
@@ -122,7 +128,7 @@ test('an ambiguous submit failure is not automatically retried', async () => {
 });
 
 test('room geometry downloads run together and use the smaller 500k splat', async () => {
-  const t = convexTest(schema, modules);
+  const t = asUser();
   let releaseSplat!: () => void;
   const colliderStarted = new Promise<void>(resolve => { releaseSplat = resolve; });
   const downloads: string[] = [];
@@ -143,7 +149,7 @@ test('room geometry downloads run together and use the smaller 500k splat', asyn
 });
 
 test.each([0, 21 * 1024 * 1024])('rejects invalid image size %s before submission', async size => {
-  const t = convexTest(schema, modules);
+  const t = asUser();
   const storageId = await media(t);
   await t.run(ctx => ctx.db.patch(storageId as never, { size } as never));
   await expect(t.mutation(api.worlds.startFromMedia, { storageId, kind: 'image' })).rejects.toThrow('20 MB');
@@ -151,7 +157,7 @@ test.each([0, 21 * 1024 * 1024])('rejects invalid image size %s before submissio
 });
 
 test('text creation also defaults to fast and returns before provider completion', async () => {
-  const t = convexTest(schema, modules);
+  const t = asUser();
   const fetcher = vi.fn(async () => json({ operation_id: 'op', done: true, error: { message: 'test failure' } }));
   vi.stubGlobal('fetch', fetcher);
   const id = await t.action(api.worlds.generateFromText, { prompt: 'A room' });
@@ -161,7 +167,7 @@ test('text creation also defaults to fast and returns before provider completion
 });
 
 test.each(['failed collider', 'late completion'])('cleans unused downloads after %s', async mode => {
-  const t = convexTest(schema, modules);
+  const t = asUser();
   let id: Id<'worlds'>;
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     if (init?.method === 'POST') return json({ operation_id: 'op', done: true, response: { world_id: 'room' } });

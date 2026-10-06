@@ -3,6 +3,8 @@ import { v } from "convex/values";
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import { requireIdentity, ownsAsset, ownsPlacement, requireOwnedUpload, deleteOwnedUploadTicket } from "./model/auth";
+import { requiredMaxCostUsd, reserveDailyBudget, settleDailyBudget } from "./model/budget";
 
 const BASE = "https://openapi.tripo3d.ai/v3";
 const headers = () => ({
@@ -14,7 +16,8 @@ const TERMINAL = ["success", "failed", "cancelled", "banned", "expired"];
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    const assets = await ctx.db.query("assets").order("desc").collect();
+    const ownerId = await requireIdentity(ctx);
+    const assets = await ctx.db.query("assets").withIndex("by_ownerId", (q) => q.eq("ownerId", ownerId)).order("desc").take(100);
     return Promise.all(assets.map(async (a) => ({
       ...a,
       glbUrl: a.glbStorageId ? await ctx.storage.getUrl(a.glbStorageId) : null,
@@ -30,8 +33,11 @@ export const byId = internalQuery({
 });
 
 export const create = internalMutation({
-  args: { prompt: v.string(), model: v.string(), description: v.optional(v.string()), stage: v.optional(v.string()) },
-  handler: (ctx, args) => ctx.db.insert("assets", { ...args, stage: args.stage as any, status: "generating" }),
+  args: { prompt: v.string(), model: v.string(), ownerId: v.string(), budgetReserveUsd: v.optional(v.number()), description: v.optional(v.string()), stage: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const budgetDay = args.budgetReserveUsd ? await reserveDailyBudget(ctx, args.budgetReserveUsd, args.ownerId) : undefined;
+    return ctx.db.insert("assets", { ...args, budgetDay, stage: args.stage as any, status: "generating" });
+  },
 });
 
 export const update = internalMutation({
@@ -47,9 +53,27 @@ export const update = internalMutation({
       progress: v.optional(v.number()),
       cutoutStorageId: v.optional(v.id("_storage")),
       hasSurfaceColor: v.optional(v.boolean()),
+      submissionStarted: v.optional(v.boolean()),
     }),
   },
-  handler: (ctx, { id, patch }) => ctx.db.patch(id, patch),
+  handler: async (ctx, { id, patch }) => {
+    const previous = await ctx.db.get(id);
+    if (!previous) return;
+    await ctx.db.patch(id, patch);
+    if (previous?.status === "generating" && (patch.status === "ready" || (patch.status === "failed" && !previous.submissionStarted))) {
+      await settleDailyBudget(ctx, previous, patch.status === "ready");
+    }
+  },
+});
+
+export const markSubmissionStarted = internalMutation({
+  args: { id: v.id("assets") },
+  handler: async (ctx, { id }) => {
+    const asset = await ctx.db.get(id);
+    if (!asset || asset.status !== "generating") return false;
+    await ctx.db.patch(id, { submissionStarted: true });
+    return true;
+  },
 });
 
 /** Text → 3D. P1 (~10–60s) for game props; v3.1-20260211 for hero quality. */
@@ -58,8 +82,11 @@ export const generateFromText = action({
   // Explicit return type: the handler calls internal.assets.* from this same
   // module, so without it TS hits a circular inference (TS7022/TS7023).
   handler: async (ctx, { prompt, model = "P1-20260311", texture = true }): Promise<Id<"assets">> => {
-    const id = await ctx.runMutation(internal.assets.create, { prompt, model });
+    const ownerId = await requireIdentity(ctx);
+    const id = await ctx.runMutation(internal.assets.create, { prompt, model, ownerId, budgetReserveUsd: requiredMaxCostUsd("TRIPO_MAX_JOB_USD") });
     try {
+      const canSubmit: boolean = await ctx.runMutation(internal.assets.markSubmissionStarted, { id });
+      if (!canSubmit) return id;
       const created = await post("generation/text-to-model", { prompt, model, texture, pbr: texture, auto_size: true });
       const taskId: string = created.data.task_id;
       await ctx.runMutation(internal.assets.update, { id, patch: { taskId } });
@@ -90,8 +117,11 @@ export const generateFromText = action({
 export const generateFromImage = action({
   args: { imageUrlOrToken: v.string(), model: v.optional(v.string()) },
   handler: async (ctx, { imageUrlOrToken, model = "P1-20260311" }): Promise<Id<"assets">> => {
-    const id = await ctx.runMutation(internal.assets.create, { prompt: `image:${imageUrlOrToken}`, model });
+    const ownerId = await requireIdentity(ctx);
+    const id = await ctx.runMutation(internal.assets.create, { prompt: `image:${imageUrlOrToken}`, model, ownerId, budgetReserveUsd: requiredMaxCostUsd("TRIPO_MAX_JOB_USD") });
     try {
+      const canSubmit: boolean = await ctx.runMutation(internal.assets.markSubmissionStarted, { id });
+      if (!canSubmit) return id;
       // NOTE: verify the field name (`input` vs `file`) against your first live response.
       const created = await post("generation/image-to-model", { input: imageUrlOrToken, model, texture: true, pbr: true, auto_size: true });
       const taskId: string = created.data.task_id;
@@ -122,6 +152,9 @@ export const startSketch = mutation({
     description: v.string(),
   },
   handler: async (ctx, { imageStorageId, cleanStorageId, description }): Promise<Id<"assets">> => {
+    const ownerId = await requireIdentity(ctx);
+    await requireOwnedUpload(ctx, imageStorageId, ownerId);
+    if (cleanStorageId) await requireOwnedUpload(ctx, cleanStorageId, ownerId);
     const text = description.trim();
     if (!text) throw new Error("Describe what you drew before generating.");
     if (text.length > 8000) throw new Error("Keep the description under 8,000 characters.");
@@ -130,7 +163,10 @@ export const startSketch = mutation({
     for (const key of ["FAL_KEY", "TRIPO_API_KEY"]) {
       if (!process.env[key]?.trim()) throw new Error(`${key} is not set on this deployment. Run \`npx convex env set ${key} <key>\`.`);
     }
+    const budgetReserveUsd = requiredMaxCostUsd("SKETCH_MAX_JOB_USD");
+    const budgetDay = await reserveDailyBudget(ctx, budgetReserveUsd, ownerId);
     const id = await ctx.db.insert("assets", {
+      ownerId, budgetDay, budgetReserveUsd, drawingStorageIds: [imageStorageId, ...(cleanStorageId ? [cleanStorageId] : [])],
       prompt: text, description: text, model: "P1-20260311", status: "generating", stage: "image",
     });
     await ctx.scheduler.runAfter(0, internal.sketch.run, { id, imageStorageId, cleanStorageId, description: text });
@@ -142,8 +178,8 @@ export const startSketch = mutation({
 export const resumeSketch = mutation({
   args: { assetId: v.id("assets") },
   handler: async (ctx, { assetId }) => {
-    const asset = await ctx.db.get(assetId);
-    if (!asset) throw new Error("That object no longer exists.");
+    const ownerId = await requireIdentity(ctx);
+    const asset = await ownsAsset(ctx, assetId, ownerId);
     if (!asset.taskId) throw new Error("This object has no saved Tripo task to resume.");
     await ctx.db.patch(assetId, { status: "generating", stage: "mesh", error: undefined });
     await ctx.scheduler.runAfter(0, internal.sketch.resumeRun, { assetId });
@@ -154,24 +190,28 @@ export const resumeSketch = mutation({
 export const placementsInRoom = query({
   args: { room: v.string() },
   handler: async (ctx, { room }) => {
-    const ps = await ctx.db.query("placements").withIndex("by_room", (q) => q.eq("room", room)).collect();
+    const ownerId = await requireIdentity(ctx);
+    const ps = await ctx.db.query("placements").withIndex("by_ownerId_and_room", (q) => q.eq("ownerId", ownerId).eq("room", room)).take(500);
     return Promise.all(ps.map(async (p) => {
       const asset = await ctx.db.get(p.assetId);
-      return { ...p, glbUrl: asset?.glbStorageId ? await ctx.storage.getUrl(asset.glbStorageId) : null };
+      return { ...p, glbUrl: asset?.ownerId === ownerId && asset.glbStorageId ? await ctx.storage.getUrl(asset.glbStorageId) : null };
     }));
   },
 });
 
 export const place = mutation({
   args: { room: v.string(), assetId: v.id("assets"), position: v.array(v.number()), rotation: v.optional(v.array(v.number())), scale: v.optional(v.number()), targetSize: v.optional(v.number()) },
-  handler: (ctx, { room, assetId, position, rotation = [0, 0, 0], scale = 1, targetSize }) =>
-    ctx.db.insert("placements", { room, assetId, position, rotation, scale, targetSize }),
+  handler: async (ctx, { room, assetId, position, rotation = [0, 0, 0], scale = 1, targetSize }) => {
+    const ownerId = await requireIdentity(ctx);
+    await ownsAsset(ctx, assetId, ownerId);
+    return ctx.db.insert("placements", { ownerId, room, assetId, position, rotation, scale, targetSize });
+  },
 });
 
 /** Undo for a placement, and the Remove button. Deleting a placement never touches its asset. */
 export const removePlacement = mutation({
   args: { id: v.id("placements") },
-  handler: async (ctx, { id }) => { await ctx.db.delete("placements", id); },
+  handler: async (ctx, { id }) => { const ownerId = await requireIdentity(ctx); await ownsPlacement(ctx, id, ownerId); await ctx.db.delete("placements", id); },
 });
 
 /** Move / resize / rotate an object already in the room. */
@@ -184,6 +224,8 @@ export const updatePlacement = mutation({
     targetSize: v.optional(v.number()),
   },
   handler: async (ctx, { id, ...patch }) => {
+    const ownerId = await requireIdentity(ctx);
+    await ownsPlacement(ctx, id, ownerId);
     const next = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
     if (Object.keys(next).length) await ctx.db.patch(id, next);
   },
@@ -193,7 +235,8 @@ export const updatePlacement = mutation({
 export const clearRoom = mutation({
   args: { room: v.string() },
   handler: async (ctx, { room }) => {
-    const ps = await ctx.db.query("placements").withIndex("by_room", (q) => q.eq("room", room)).collect();
+    const ownerId = await requireIdentity(ctx);
+    const ps = await ctx.db.query("placements").withIndex("by_ownerId_and_room", (q) => q.eq("ownerId", ownerId).eq("room", room)).take(500);
     for (const p of ps) await ctx.db.delete("placements", p._id);
     return ps.length;
   },
@@ -201,7 +244,29 @@ export const clearRoom = mutation({
 
 export const movePlacement = mutation({
   args: { id: v.id("placements"), position: v.array(v.number()), rotation: v.optional(v.array(v.number())) },
-  handler: async (ctx, { id, position, rotation }) => { await ctx.db.patch(id, { position, ...(rotation ? { rotation } : {}) }); },
+  handler: async (ctx, { id, position, rotation }) => { const ownerId = await requireIdentity(ctx); await ownsPlacement(ctx, id, ownerId); await ctx.db.patch(id, { position, ...(rotation ? { rotation } : {}) }); },
+});
+
+export const deleteObject = mutation({
+  args: { id: v.id("assets") },
+  handler: async (ctx, { id }) => {
+    const ownerId = await requireIdentity(ctx);
+    const asset = await ownsAsset(ctx, id, ownerId);
+    const placements = await ctx.db.query("placements").withIndex("by_assetId", (q) => q.eq("assetId", id)).take(500);
+    for (const placement of placements) {
+      if (placement.ownerId === ownerId) await ctx.db.delete("placements", placement._id);
+    }
+    for (const fileId of [asset.glbStorageId, asset.cutoutStorageId, ...(asset.drawingStorageIds ?? [])]) {
+      if (fileId) {
+        await ctx.storage.delete(fileId);
+        await deleteOwnedUploadTicket(ctx, fileId, ownerId);
+      }
+    }
+    await ctx.db.delete("assets", id);
+    if (asset.budgetDay && asset.budgetReserveUsd && asset.status === "generating" && !asset.taskId && !asset.submissionStarted) {
+      await settleDailyBudget(ctx, asset, false);
+    }
+  },
 });
 
 async function post(path: string, body: unknown) {

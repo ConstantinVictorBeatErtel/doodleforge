@@ -76,6 +76,8 @@ export const run = internalAction({
       ctx.runMutation(internal.assets.update, { id, patch: p as any });
 
     try {
+      const canSubmit: boolean = await ctx.runMutation(internal.assets.markSubmissionStarted, { id });
+      if (!canSubmit) return id;
       // Convex storage URLs are public, so fal can fetch the drawing directly.
       const urls = (await Promise.all(
         [imageStorageId, cleanStorageId].filter(Boolean).map((s) => ctx.storage.getUrl(s as Id<"_storage">)),
@@ -91,6 +93,7 @@ export const run = internalAction({
       if (result.status !== "ok") {
         throw new Error(result.error || "No usable transparent image was produced. 3D generation was not started.");
       }
+      if (!await ctx.runQuery(internal.assets.byId, { id })) return id;
       const cutout = new Blob([result.bytes as BlobPart], { type: "image/png" });
       const cutoutStorageId = await ctx.storage.store(cutout);
       await patch({ stage: "mesh", cutoutStorageId });
@@ -100,6 +103,7 @@ export const run = internalAction({
       form.append("file", cutout, "object.png");
       const uploaded = await api("/upload/sts", { method: "POST", body: form });
       if (!uploaded.image_token) throw new Error("Tripo upload returned no image token.");
+      if (!await ctx.runQuery(internal.assets.byId, { id })) return id;
 
       const submitted = await api("/task", { method: "POST", body: generationPayload(uploaded.image_token, "png", { color: true }) });
       if (!submitted.task_id) throw new Error("Tripo returned no task ID. Check its task history before creating again.");
@@ -111,6 +115,7 @@ export const run = internalAction({
         onProgress: (t: any) => { if (typeof t.progress === "number") void patch({ progress: t.progress }); },
       });
 
+      if (!await ctx.runQuery(internal.assets.byId, { id })) return id;
       const glbStorageId = await downloadModel(ctx, task);
       await patch({
         status: "ready", stage: "done", progress: 100, glbStorageId,

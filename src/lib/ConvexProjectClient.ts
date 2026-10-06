@@ -81,12 +81,14 @@ export class ConvexProjectClient {
   async importWorld(world: ZipWorld, reuseExisting = false): Promise<Id<'worlds'>> {
     const store = async (entry?: ZipEntry): Promise<Id<'_storage'> | undefined> => {
       if (!entry) return undefined;
-      const url = await this.convex.mutation(api.worlds.generateUploadUrl, {});
-      const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': entry.blob.type || 'application/octet-stream' }, body: entry.blob });
+      const ticket = await this.convex.mutation(api.worlds.generateUploadUrl, {});
+      const response = await fetch(ticket.url, { method: 'POST', headers: { 'Content-Type': entry.blob.type || 'application/octet-stream' }, body: entry.blob });
       if (!response.ok) throw new Error(`Unable to upload ${entry.name}. Please retry.`);
       const result = await response.json() as { storageId?: string };
       if (!result.storageId) throw new Error(`Storage did not return an ID for ${entry.name}.`);
-      return result.storageId as Id<'_storage'>;
+      const storageId = result.storageId as Id<'_storage'>;
+      await this.convex.mutation(api.worlds.claimUpload, { token: ticket.token, storageId });
+      return storageId;
     };
     const [splatStorageId, colliderStorageId, panoStorageId] = await Promise.all([
       store(world.splat), store(world.collider), store(world.pano),

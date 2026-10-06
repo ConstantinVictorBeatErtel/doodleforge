@@ -3,7 +3,7 @@
 // This is the standalone first-person editor rewired onto Convex. What changed from
 // the local version: the room geometry, the object library and the placements all come
 // from Convex instead of `public/` and IndexedDB, generation is a scheduled Convex
-// action instead of a local job server, and other players can be in here with you.
+// action instead of a local job server. Creations are private to their owner.
 //
 // What deliberately did not change is the placement maths — `surfacePick` raycasts the
 // Marble collider, reads the real triangle normal, and `orientTo` stands the object on
@@ -19,7 +19,6 @@ import { PlacementGhost, type GhostState } from "./components/PlacementGhost";
 import { Collider, SparkSetup, SplatWorld } from "./components/SplatWorld";
 import { Walk, type MouseLook, type TouchInput } from "./components/LocalWalk";
 import { TouchControls } from "./components/TouchControls";
-import { Players } from "./components/Players";
 import { DebugPanel, DEBUG_DEFAULTS, type DebugSettings } from "./components/DebugPanel";
 import { DrawingBridge, DrawingLayer, type DrawingCapture, type DrawingRequest } from "./components/DrawingLayer";
 import { SketchGhost } from "./components/SketchGhost";
@@ -30,7 +29,6 @@ import { pickSurface } from "./lib/surfacePick";
 import { usePlacementHistory, type PlacementInput } from "./lib/placementHistory";
 import { ConvexProjectClient } from "./lib/ConvexProjectClient";
 import { ExistingWorlds } from "./components/ExistingWorlds";
-import { getSessionId, randomColor } from "./lib/session";
 import { glbToStl, downloadBlob, safeFilename, PRINT_HEIGHT_MM } from "./lib/stlExport";
 
 // Never invent a ground plane: an object may only land on the reconstructed collider
@@ -85,7 +83,6 @@ class ColliderBoundary extends Component<{ children: ReactNode; onError: (messag
 export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldId?: string; onNewWorld: () => void }) {
   const convex = useConvex();
   const projectClient = useMemo(() => new ConvexProjectClient(convex), [convex]);
-  const sessionId = useMemo(getSessionId, []);
   const explicitRoom = useMemo(() => new URLSearchParams(location.search).get("room"), []);
   // ?debug=1 opens the transform sliders and draws the collider as a wireframe. Worth
   // a look before trusting a placement: splat and collider alignment is not verified.
@@ -110,10 +107,12 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
   const removePlacement = useMutation(api.assets.removePlacement);
   const updatePlacement = useMutation(api.assets.updatePlacement);
   const clearRoom = useMutation(api.assets.clearRoom);
+  const deleteObject = useMutation(api.assets.deleteObject);
+  const deleteWorld = useMutation(api.worlds.deleteWorld);
   const startSketch = useMutation(api.assets.startSketch);
   const resumeSketch = useMutation(api.assets.resumeSketch);
   const uploadUrl = useMutation(api.worlds.generateUploadUrl);
-  const join = useMutation(api.players.join);
+  const claimUpload = useMutation(api.worlds.claimUpload);
   const resumeWorld = useMutation(api.worlds.resumeGeneration);
   const genWorld = useAction(api.worlds.generateFromText);
   const orient = useAction(api.orientation.orientSketch);
@@ -143,7 +142,6 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
   const [wantLook, setWantLook] = useState(false);
   const [wireframe, setWireframe] = useState(false);
   const [error, setError] = useState("");
-  const [joined, setJoined] = useState(false);
   const [zipStatus, setZipStatus] = useState("");
   const [worldPrompt, setWorldPrompt] = useState("a cozy candle-lit library with tall shelves");
   const [cfg, setCfg] = useState<DebugSettings>(DEBUG_DEFAULTS);
@@ -220,11 +218,13 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
   // Hoisted out of submitDrawing: JobWatcher uploads the contact sheet through this too.
   const store = useCallback(async (dataUrl: string) => {
     const blob = await (await fetch(dataUrl)).blob();
-    const url = await uploadUrl();
-    const response = await fetch(url, { method: "POST", headers: { "Content-Type": "image/png" }, body: blob });
+    const ticket = await uploadUrl();
+    const response = await fetch(ticket.url, { method: "POST", headers: { "Content-Type": "image/png" }, body: blob });
     if (!response.ok) throw new Error(`Upload failed (HTTP ${response.status}).`);
-    return (await response.json()).storageId as Id<"_storage">;
-  }, [uploadUrl]);
+    const storageId = (await response.json()).storageId as Id<"_storage">;
+    await claimUpload({ token: ticket.token, storageId });
+    return storageId;
+  }, [uploadUrl, claimUpload]);
 
   async function submitDrawing(request: DrawingRequest) {
     if (submissionBusy.current) return;
@@ -249,7 +249,7 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
 
   async function downloadStl(url: string, name: string) {
     setExporting(true); setError("");
-    try { downloadBlob(await glbToStl(url), `${safeFilename(name)}-${PRINT_HEIGHT_MM}mm.stl`); }
+    try { await downloadBlob(await glbToStl(url), `${safeFilename(name)}-${PRINT_HEIGHT_MM}mm.stl`); }
     catch (e) { setError(`STL export failed: ${e instanceof Error ? e.message : String(e)}`); }
     finally { setExporting(false); }
   }
@@ -279,7 +279,7 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
   const leaveDrawing = useCallback(() => { setDrawing(null); resumeWalking(); }, [resumeWalking]);
 
   const selectWorld = (id: string) => {
-    setActiveWorld(id); setJoined(false); setError("");
+    setActiveWorld(id); setError("");
     if (world?._id !== id) setRoomReady(false);
     cancel(); setSelected(null); history.clear();
     const url = new URL(location.href);
@@ -371,7 +371,7 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
       </nav>
     </header>
 
-    {!drawing && <ExistingWorlds worlds={worlds} activeId={world?._id} onSelect={selectWorld} corner="bottom-right" />}
+    {!drawing && <ExistingWorlds worlds={worlds} activeId={world?._id} onSelect={selectWorld} onDelete={(id) => { void deleteWorld({ id: id as Id<'worlds'> }).catch((e) => setError(e instanceof Error ? e.message : 'Could not delete this room.')); }} corner="bottom-right" />}
 
     <aside id="object-library" className={`editor-panel ${libraryOpen ? "open" : ""}`} inert={!libraryOpen || !!drawing}>
       <div className="section-heading"><h2>Objects &amp; placement</h2><button aria-label="Close objects" onClick={() => setLibraryOpen(false)}>×</button></div>
@@ -383,8 +383,7 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
       </div>
       <div className="row">
         <span className="save-status">room <b>{room}</b></span>
-        {joined ? <span className="save-status">joined</span>
-          : <button onClick={async () => { await join({ room, sessionId, name: "me", color: randomColor() }); setJoined(true); }}>Join multiplayer</button>}
+        <span className="save-status">private room</span>
       </div>
       <p className="controls-help">{isTouch
         ? <>Drag the room to look · Draw an object to sketch<br />Joystick to walk · push further to run</>
@@ -394,13 +393,14 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
 
       <section>
         <div className="section-heading"><h2>Object library</h2><span>{readyAssets.length}</span></div>
-        <p className="hint">Objects live in this world's backend, so everyone in the room sees them.</p>
+        <p className="hint">Objects in your library are private to your account.</p>
         {!readyAssets.length && <p className="hint">Nothing generated yet. Use <b>Draw an object</b>.</p>}
         {readyAssets.map((asset) => <div className="model-row" key={asset._id}>
           <span title={asset.description ?? asset.prompt}>{(asset.description ?? asset.prompt).slice(0, 40)}</span>
-          <a href={asset.glbUrl!} download={`${safeFilename(asset.description ?? asset.prompt)}.glb`} title="Download the GLB with its textures">↓</a>
-          <button disabled={exporting} title={`Geometry-only STL, ${PRINT_HEIGHT_MM} mm tall`} onClick={() => void downloadStl(asset.glbUrl!, asset.description ?? asset.prompt)}>STL</button>
+          <button title="Save the color-preserving GLB" onClick={() => void fetch(asset.glbUrl!).then(response => response.blob()).then(blob => downloadBlob(blob, `${safeFilename(asset.description ?? asset.prompt)}.glb`)).catch(e => setError(`GLB export failed: ${e instanceof Error ? e.message : String(e)}`))}>GLB</button>
+          <button disabled={exporting} aria-label={`Export colorless STL for ${(asset.description ?? asset.prompt).slice(0, 40)}`} title={`Geometry only, no color, ${PRINT_HEIGHT_MM} mm tall`} onClick={() => void downloadStl(asset.glbUrl!, asset.description ?? asset.prompt)}>STL · no color</button>
           <button onClick={() => arm(asset._id, asset.glbUrl!)}>Place</button>
+          <button aria-label={`Delete ${asset.description ?? asset.prompt}`} title="Delete this object and its files" onClick={() => { void deleteObject({ id: asset._id }).catch((e) => setError(e instanceof Error ? e.message : 'Could not delete this object.')); }}>Delete</button>
         </div>)}
       </section>
 
@@ -527,7 +527,6 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
           }} />}
         <Walk reset={reset} paused={paused || !!armed} enabled={!drawing} mouseLookRef={mouseLookRef} touchInputRef={touchInputRef}
           onLockChange={(locked) => { setMouseLocked(locked); setPaused(!locked); }} onError={setError} />
-        {joined && <Players room={room} sessionId={sessionId} />}
       </Canvas>
 
       {!drawing && <>
@@ -608,7 +607,7 @@ export default function WorldApp({ initialWorldId, onNewWorld }: { initialWorldI
                   {jobPlaced && <button disabled={!history.canUndo || !!armed} onClick={() => void history.undo()}>Undo</button>}
                   {jobAsset?.status === "ready" && !jobInHand && !jobPlaced && jobAsset.glbUrl &&
                     <button onClick={() => arm(jobAsset._id, jobAsset.glbUrl!)}>Place object</button>}
-                  {jobAsset?.glbUrl && <a download={`${safeFilename(jobAsset.description ?? "object")}.glb`} href={jobAsset.glbUrl}>Color GLB ↗</a>}
+                  {jobAsset?.glbUrl && <button onClick={() => void fetch(jobAsset.glbUrl!).then(response => response.blob()).then(blob => downloadBlob(blob, `${safeFilename(jobAsset.description ?? "object")}.glb`)).catch(e => setError(`GLB export failed: ${e instanceof Error ? e.message : String(e)}`))}>Color GLB</button>}
                   {jobAsset?.glbUrl && <button disabled={exporting} onClick={() => void downloadStl(jobAsset.glbUrl!, jobAsset.description ?? "object")}>{exporting ? "Exporting…" : "STL · no color ↗"}</button>}
                   {jobAsset?.status === "failed" && jobAsset.taskId && <button onClick={() => void resumeSketch({ assetId: jobAsset._id })}>Resume task</button>}
                   {!generating && <button onClick={() => dismissJob(job.assetId)}>Done</button>}

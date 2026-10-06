@@ -2,8 +2,10 @@
   "expo": {
     "name": "doodleforge",
     "slug": "doodleforge",
+    "scheme": "doodleforge",
+    "platforms": ["ios"],
     "version": "1.0.0",
-    "orientation": "default",
+    "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "splash": {
@@ -12,11 +14,16 @@
       "backgroundColor": "#0b0d10"
     },
     "ios": {
-      "supportsTablet": true,
+      "bundleIdentifier": "com.doodleforge.app",
+      "supportsTablet": false,
+      "deploymentTarget": "17.0",
       "infoPlist": {
         "NSAppTransportSecurity": {
-          "NSAllowsArbitraryLoads": true
-        }
+          "NSAllowsArbitraryLoads": false,
+          "NSAllowsLocalNetworking": false
+        },
+        "NSCameraUsageDescription": "Doodleforge uses the camera when you choose to create a room from a photo.",
+        "NSPhotoLibraryUsageDescription": "Doodleforge accesses a photo or video only when you choose it to create a private room."
       }
     },
     "android": {
@@ -26,14 +33,21 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false,
-      "usesCleartextTraffic": true
+      "predictiveBackGestureEnabled": false
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-status-bar"
+      "expo-status-bar",
+      "expo-secure-store",
+      "expo-apple-authentication",
+      "@clerk/expo",
+      ["expo-image-picker", {
+        "photosPermission": "Doodleforge accesses a photo or video only when you choose it to create a private room.",
+        "cameraPermission": "Doodleforge uses the camera when you choose to create a room from a photo.",
+        "microphonePermission": false
+      }]
     ]
   }
 }

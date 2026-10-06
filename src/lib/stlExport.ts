@@ -45,8 +45,21 @@ export async function glbToStl(url: string, heightMm = PRINT_HEIGHT_MM): Promise
   }
 }
 
-/** Hand a generated blob to the browser's download flow without leaking the object URL. */
-export function downloadBlob(blob: Blob, filename: string) {
+declare global { interface Window { ReactNativeWebView?: { postMessage(message: string): void } } }
+
+/** Hand generated geometry to Files/share on iOS or download it in a browser. */
+export async function downloadBlob(blob: Blob, filename: string) {
+  if (window.ReactNativeWebView) {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Could not prepare the export."));
+      reader.onload = () => resolve(String(reader.result));
+      reader.readAsDataURL(blob);
+    });
+    if (dataUrl.length > 40_000_000) throw new Error("This export is too large for the iPhone share sheet (maximum 30 MB).");
+    window.ReactNativeWebView.postMessage(JSON.stringify({ version: 1, type: "export", fileName: filename, mimeType: blob.type, dataUrl }));
+    return;
+  }
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;

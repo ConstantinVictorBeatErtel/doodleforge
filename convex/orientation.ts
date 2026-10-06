@@ -15,6 +15,8 @@
 // this action in Convex's default runtime with no "use node" and no dependency to install.
 import { v } from "convex/values";
 import { action } from "./_generated/server";
+import { internal } from "./_generated/api";
+import { requireIdentity } from "./model/auth";
 import { orientationPrompt, orientationSchema, parseOrientation, type OrientationChoice } from "./orientationResult";
 
 const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
@@ -43,6 +45,8 @@ export const orientSketch = action({
     views: v.number(),
   },
   handler: async (ctx, { viewsStorageId, sketchStorageId, description, views }): Promise<OrientationChoice | null> => {
+    const identity = await requireIdentity(ctx);
+    await ctx.runQuery(internal.worlds.assertOwnedUploads, { ownerId: identity, storageIds: [viewsStorageId, sketchStorageId] });
     const key = process.env.OPENROUTER_API_KEY?.trim();
     if (!key) throw new Error("OPENROUTER_API_KEY is not set on this deployment. Run `npx convex env set OPENROUTER_API_KEY <key>`.");
     if (!Number.isInteger(views) || views < 2 || views > 64) throw new Error(`views must be an integer between 2 and 64, got ${views}.`);

@@ -4,6 +4,8 @@ import { action, internalAction, internalMutation, internalQuery, mutation, quer
 import { internal } from "./_generated/api";
 import type { ActionCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
+import { requireIdentity, ownsWorld, requireOwnedUpload, deleteOwnedUploadTicket } from "./model/auth";
+import { maxWorldGenerationCostUsd, reserveDailyBudget, settleDailyBudget } from "./model/budget";
 
 const FAST_MODEL = "marble-1.0-draft";
 const POLL_MS = 3000;
@@ -26,7 +28,9 @@ const headers = () => ({
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    const worlds = await ctx.db.query("worlds").order("desc").collect();
+    const ownerId = await requireIdentity(ctx);
+    const worlds = await ctx.db.query("worlds")
+      .withIndex("by_ownerId", (q) => q.eq("ownerId", ownerId)).order("desc").take(100);
     return Promise.all(
       worlds.map(async (w) => ({
         ...w,
@@ -46,7 +50,8 @@ export const list = query({
 export const byWorldId = query({
   args: { worldId: v.string(), splatFileName: v.optional(v.string()) },
   handler: async (ctx, { worldId, splatFileName }) => {
-    let candidates = ctx.db.query('worlds').withIndex('by_worldId', (q) => q.eq('worldId', worldId))
+    const ownerId = await requireIdentity(ctx);
+    let candidates = ctx.db.query('worlds').withIndex('by_ownerId_and_worldId', (q) => q.eq('ownerId', ownerId).eq('worldId', worldId))
       .filter((q) => q.eq(q.field('status'), 'ready'));
     if (splatFileName) candidates = candidates.filter((q) => q.eq(q.field('splatFileName'), splatFileName));
     const world = await candidates.first();
@@ -55,10 +60,11 @@ export const byWorldId = query({
 });
 
 export const create = internalMutation({
-  args: { name: v.string(), prompt: v.string(), model: v.string() },
+  args: { name: v.string(), prompt: v.string(), model: v.string(), ownerId: v.string(), budgetReserveUsd: v.optional(v.number()) },
   handler: async (ctx, args) => {
+    const budgetDay = args.budgetReserveUsd ? await reserveDailyBudget(ctx, args.budgetReserveUsd, args.ownerId) : undefined;
     const deadline = Date.now() + waitBudget(args.model);
-    const id = await ctx.db.insert("worlds", { ...args, status: "generating", stage: "Starting World Labs…", generationDeadline: deadline });
+    const id = await ctx.db.insert("worlds", { ...args, budgetDay, status: "generating", stage: "Starting World Labs…", generationDeadline: deadline });
     await ctx.scheduler.runAfter(waitBudget(args.model), internal.worlds.expireGeneration, { id, deadline });
     return id;
   },
@@ -81,14 +87,19 @@ export const update = internalMutation({
       error: v.optional(v.string()),
       stage: v.optional(v.string()),
       retryable: v.optional(v.boolean()),
+      submissionStarted: v.optional(v.boolean()),
     }),
   },
   handler: async (ctx, { id, deadline, patch }): Promise<boolean> => {
+    const previous = await ctx.db.get(id);
+    if (!previous) return false;
     if (deadline !== undefined) {
-      const world = await ctx.db.get(id);
-      if (world?.status !== "generating" || world.generationDeadline !== deadline) return false;
+      if (previous?.status !== "generating" || previous.generationDeadline !== deadline) return false;
     }
     await ctx.db.patch(id, patch);
+    if (previous.status === "generating" && (patch.status === "ready" || (patch.status === "failed" && patch.retryable === false && !previous.submissionStarted))) {
+      await settleDailyBudget(ctx, previous, patch.status === "ready");
+    }
     return true;
   },
 });
@@ -99,13 +110,35 @@ export const generationState = internalQuery({
   handler: (ctx, { id }) => ctx.db.get(id),
 });
 
+export const markSubmissionStarted = internalMutation({
+  args: { id: v.id("worlds"), deadline: v.number() },
+  handler: async (ctx, { id, deadline }) => {
+    const world = await ctx.db.get(id);
+    if (!world || world.status !== "generating" || world.generationDeadline !== deadline) return false;
+    await ctx.db.patch(id, { submissionStarted: true });
+    return true;
+  },
+});
+
+export const assertOwnedUploads = internalQuery({
+  args: { ownerId: v.string(), storageIds: v.array(v.id("_storage")) },
+  handler: async (ctx, { ownerId, storageIds }) => {
+    for (const storageId of storageIds) {
+      const upload = await ctx.db.query("uploads").withIndex("by_storageId", (q) => q.eq("storageId", storageId)).unique();
+      if (!upload || upload.ownerId !== ownerId || upload.expiresAt < Date.now()) throw new Error("This upload has expired or does not belong to your account.");
+    }
+    return true;
+  },
+});
+
 export const expireGeneration = internalMutation({
   args: { id: v.id("worlds"), deadline: v.number() },
   handler: async (ctx, { id, deadline }) => {
     const world = await ctx.db.get(id);
-    if (world?.status !== "generating" || world.generationDeadline !== deadline) return;
+    if (!world || world.status !== "generating" || world.generationDeadline !== deadline) return;
     await ctx.db.patch(id, { status: "failed", retryable: Boolean(world.operationId),
       error: world.operationId ? "This is taking longer than expected. Resume to check the same generation without starting another." : "World Labs did not return an operation. Check the provider dashboard before creating another world." });
+    if (!world.operationId && !world.submissionStarted) await settleDailyBudget(ctx, world, false);
   },
 });
 
@@ -126,6 +159,7 @@ export const failGeneration = internalMutation({
     const world = await ctx.db.get(id);
     if (world?.status === "generating" && world.generationDeadline === deadline) {
       await ctx.db.patch(id, { status: "failed", error, retryable });
+      if (!retryable && !world.submissionStarted) await settleDailyBudget(ctx, world, false);
     }
   },
 });
@@ -134,7 +168,8 @@ export const resumeGeneration = mutation({
   args: { id: v.id("worlds") },
   handler: async (ctx, { id }) => {
     requireKey();
-    const world = await ctx.db.get(id);
+    const ownerId = await requireIdentity(ctx);
+    const world = await ownsWorld(ctx, id, ownerId);
     if (!world || world.status !== "failed" || !world.retryable || !world.operationId) return;
     const deadline = Math.max(Date.now() + waitBudget(world.model), (world.generationDeadline ?? 0) + 1);
     await ctx.db.patch(id, { status: "generating", error: undefined, retryable: false, stage: "Checking your existing generation…", generationDeadline: deadline });
@@ -148,6 +183,8 @@ async function runGenerate(ctx: ActionCtx, id: Id<"worlds">, worldPrompt: unknow
   if (!row || row.status !== "generating" || !row.generationDeadline) return;
   const deadline = row.generationDeadline;
   let submitted = false;
+  const canSubmit: boolean = await ctx.runMutation(internal.worlds.markSubmissionStarted, { id, deadline });
+  if (!canSubmit) return;
   try {
     // Never retry this paid POST automatically, including after an ambiguous network error.
     const op = await post("worlds:generate", { display_name: displayName.slice(0, 64), model, world_prompt: worldPrompt });
@@ -156,7 +193,9 @@ async function runGenerate(ctx: ActionCtx, id: Id<"worlds">, worldPrompt: unknow
     await ctx.runMutation(internal.worlds.schedulePoll, { id, deadline, operationId: op.operation_id, stage: "Building your world…", delay: op.done ? -1 : POLL_MS });
     if (op.done) await finishOperation(ctx, id, deadline, op);
   } catch (e) {
-    await ctx.runMutation(internal.worlds.failGeneration, { id, deadline, error: errorMessage(e), retryable: submitted });
+    await ctx.runMutation(internal.worlds.failGeneration, { id, deadline,
+      error: !submitted ? "World Labs submission did not return an operation ID. Its billing outcome is uncertain; check the provider dashboard before starting another generation." : errorMessage(e),
+      retryable: submitted });
   }
 }
 
@@ -229,9 +268,10 @@ export const cachePanorama = internalAction({
 export const generateFromText = action({
   args: { prompt: v.string(), model: v.optional(modelValidator), name: v.optional(v.string()) },
   handler: async (ctx, { prompt, model = FAST_MODEL, name }): Promise<Id<"worlds">> => {
+    const ownerId = await requireIdentity(ctx);
     requireKey();
     if (!prompt.trim()) throw new Error("Describe the room first.");
-    const id = await ctx.runMutation(internal.worlds.create, { name: name ?? prompt.slice(0, 40), prompt, model });
+    const id = await ctx.runMutation(internal.worlds.create, { name: name ?? prompt.slice(0, 40), prompt, model, ownerId, budgetReserveUsd: maxWorldGenerationCostUsd(model) });
     await ctx.scheduler.runAfter(0, internal.worlds.runFromText, { id, prompt, model, name: name ?? prompt });
     return id;
   },
@@ -247,7 +287,9 @@ export const runFromText = internalAction({
 export const startFromMedia = mutation({
   args: { storageId: v.id("_storage"), kind: v.union(v.literal("image"), v.literal("video")), name: v.optional(v.string()), model: v.optional(modelValidator) },
   handler: async (ctx, { storageId, kind, name, model }): Promise<Id<"worlds">> => {
+    const ownerId = await requireIdentity(ctx);
     requireKey();
+    await requireOwnedUpload(ctx, storageId, ownerId);
     const file = await ctx.db.system.get(storageId);
     const types = kind === "video" ? ["video/mp4", "video/quicktime", "video/webm"] : ["image/jpeg", "image/png", "image/webp"];
     if (!file || !types.includes(file.contentType ?? "")) throw new Error(`Choose a supported ${kind} upload.`);
@@ -255,8 +297,10 @@ export const startFromMedia = mutation({
     if (!file.size || file.size > max) throw new Error(`The ${kind} must be nonempty and ${kind === "video" ? 100 : 20} MB or smaller.`);
     const displayName = name?.trim() || "My room";
     const chosenModel = model ?? FAST_MODEL;
+    const budgetReserveUsd = maxWorldGenerationCostUsd(model ?? FAST_MODEL);
+    const budgetDay = await reserveDailyBudget(ctx, budgetReserveUsd, ownerId);
     const deadline = Date.now() + waitBudget(chosenModel);
-    const id = await ctx.db.insert("worlds", { name: displayName, prompt: "", model: chosenModel, status: "generating", stage: "Starting World Labs…", generationDeadline: deadline });
+    const id = await ctx.db.insert("worlds", { ownerId, budgetDay, budgetReserveUsd, sourceStorageId: storageId, name: displayName, prompt: "", model: chosenModel, status: "generating", stage: "Starting World Labs…", generationDeadline: deadline });
     await ctx.scheduler.runAfter(0, internal.worlds.runFromMedia, { id, storageId, kind, model: chosenModel, name: displayName });
     await ctx.scheduler.runAfter(waitBudget(chosenModel), internal.worlds.expireGeneration, { id, deadline });
     return id;
@@ -278,7 +322,26 @@ export const runFromMedia = internalAction({
 /** Short-lived URL the browser POSTs one extracted zip asset to. See src/lib/worldZip.ts. */
 export const generateUploadUrl = mutation({
   args: {},
-  handler: (ctx) => ctx.storage.generateUploadUrl(),
+  handler: async (ctx) => {
+    const ownerId = await requireIdentity(ctx);
+    const token = crypto.randomUUID();
+    const url = await ctx.storage.generateUploadUrl();
+    await ctx.db.insert("uploads", { ownerId, token, expiresAt: Date.now() + 60 * 60_000 });
+    return { url, token };
+  },
+});
+
+export const claimUpload = mutation({
+  args: { token: v.string(), storageId: v.id("_storage") },
+  handler: async (ctx, { token, storageId }) => {
+    const ownerId = await requireIdentity(ctx);
+    const ticket = await ctx.db.query("uploads").withIndex("by_token", (q) => q.eq("token", token)).unique();
+    if (!ticket || ticket.ownerId !== ownerId || ticket.expiresAt < Date.now()) throw new Error("This upload has expired. Please upload it again.");
+    const metadata = await ctx.db.system.get(storageId);
+    if (!metadata || metadata.size === 0 || metadata.size > 100 * 1024 * 1024) throw new Error("The uploaded file is empty or too large.");
+    await ctx.db.patch(ticket._id, { storageId });
+    return null;
+  },
 });
 
 /**
@@ -301,8 +364,11 @@ export const importUploaded = mutation({
     reuseExisting: v.optional(v.boolean()),
   },
   handler: async (ctx, a): Promise<Id<"worlds">> => {
+    const ownerId = await requireIdentity(ctx);
+    await requireOwnedUpload(ctx, a.splatStorageId, ownerId);
+    for (const fileId of [a.colliderStorageId, a.panoStorageId]) if (fileId) await requireOwnedUpload(ctx, fileId, ownerId);
     if (a.reuseExisting && a.worldId) {
-      let candidates = ctx.db.query('worlds').withIndex('by_worldId', (q) => q.eq('worldId', a.worldId))
+      let candidates = ctx.db.query('worlds').withIndex('by_ownerId_and_worldId', (q) => q.eq('ownerId', ownerId).eq('worldId', a.worldId))
         .filter((q) => q.eq(q.field('status'), 'ready'));
       // Same rule as byWorldId: only a row holding this same splat counts as already imported.
       if (a.splatFileName) candidates = candidates.filter((q) => q.eq(q.field('splatFileName'), a.splatFileName));
@@ -310,6 +376,7 @@ export const importUploaded = mutation({
       if (existing?.splatStorageId && await ctx.storage.getUrl(existing.splatStorageId)) return existing._id;
     }
     return ctx.db.insert("worlds", {
+      ownerId,
       name: a.name,
       prompt: a.prompt ?? "",
       model: a.model ?? "upload",
@@ -329,9 +396,10 @@ export const importUploaded = mutation({
 export const importExisting = action({
   args: { worldId: v.string(), name: v.optional(v.string()) },
   handler: async (ctx, { worldId, name }): Promise<Id<"worlds">> => {
+    const ownerId = await requireIdentity(ctx);
     const world = await get(`worlds/${worldId}`);
     const id = await ctx.runMutation(internal.worlds.create, {
-      name: name ?? world.display_name ?? worldId, prompt: world.caption ?? "", model: world.model ?? "unknown",
+      name: name ?? world.display_name ?? worldId, prompt: world.caption ?? "", model: world.model ?? "unknown", ownerId,
     });
     const spzUrl: string = world.assets.splats.spz_urls["500k"] ?? world.assets.splats.spz_urls.full_res;
     const colliderUrl: string | undefined = world.assets.mesh?.collider_mesh_url;
@@ -343,6 +411,27 @@ export const importExisting = action({
         metricScale: meta.metric_scale_factor, groundOffset: meta.ground_plane_offset },
     });
     return id;
+  },
+});
+
+export const deleteWorld = mutation({
+  args: { id: v.id("worlds") },
+  handler: async (ctx, { id }) => {
+    const ownerId = await requireIdentity(ctx);
+    const world = await ownsWorld(ctx, id, ownerId);
+    const placements = await ctx.db.query("placements")
+      .withIndex("by_ownerId_and_room", (q) => q.eq("ownerId", ownerId).eq("room", id)).take(500);
+    for (const placement of placements) await ctx.db.delete("placements", placement._id);
+    for (const fileId of [world.sourceStorageId, world.splatStorageId, world.colliderStorageId, world.panoStorageId]) {
+      if (fileId) {
+        await ctx.storage.delete(fileId);
+        await deleteOwnedUploadTicket(ctx, fileId, ownerId);
+      }
+    }
+    await ctx.db.delete("worlds", id);
+    if (world.budgetDay && world.budgetReserveUsd && world.status === "generating" && !world.operationId && !world.submissionStarted) {
+      await settleDailyBudget(ctx, world, false);
+    }
   },
 });
 

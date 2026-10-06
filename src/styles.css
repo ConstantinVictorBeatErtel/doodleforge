@@ -144,14 +144,14 @@ body,
 .existing-worlds-bottom-right .existing-worlds-panel { top: auto; bottom: calc(100% + 8px); }
 .existing-worlds-heading { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 8px; }
 .existing-worlds-heading button { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 4px; }
-.existing-worlds-row { display: flex; align-items: center; gap: 10px; width: 100%; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--fg); padding: 6px 8px; cursor: pointer; text-align: left; }
-.existing-worlds-row:hover:not(:disabled) { background: var(--control); }
-.existing-worlds-row:disabled { opacity: 0.45; cursor: not-allowed; }
+.existing-worlds-row { display: flex; align-items: center; gap: 8px; width: 100%; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--fg); padding: 6px 8px; text-align: left; }
+.existing-worlds-row:hover { background: var(--control); }
 .existing-worlds-row.active { border-color: var(--accent); background: var(--accent-selected, var(--control)); }
 .existing-worlds-row img, .existing-worlds-thumb { width: 34px; height: 34px; border-radius: 6px; object-fit: cover; flex: none; display: flex; align-items: center; justify-content: center; background: var(--control); color: var(--accent); }
-.existing-worlds-label { display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
+.existing-worlds-label { display: flex; flex: 1; flex-direction: column; gap: 1px; overflow: hidden; color: inherit; background: transparent; border: 0; text-align: left; padding: 4px; cursor: pointer; }
 .existing-worlds-label strong { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .existing-worlds-label small { color: var(--muted); font-size: 10.5px; }
+.existing-worlds-actions { display: inline-flex; align-items: center; gap: 4px; }
 @media (max-width: 700px) {
   .world-app { grid-template-columns: 190px minmax(0, 1fr); }
   .capture-entry { padding-bottom: 64px; }
